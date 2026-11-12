@@ -396,7 +396,10 @@ window.claude={use:async n=>{if(n==="db"){if(!dbP)dbP=makeDb();return dbP}if(n==
 window.FAH_AUTH={sb,ready,
   saveHash(){try{if(location.hash&&/^#folder-/.test(location.hash))localStorage.setItem("fah.returnHash",location.hash)}catch(e){}},
   async signIn(email,password){const r=await sb.auth.signInWithPassword({email,password});return r.error?r.error.message:null},
-  async signUp(email,password){this.saveHash();const r=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname}});if(r.error)return{err:r.error.message};return{needsConfirm:!r.data.session}},
+  async signUp(email,password,invite){this.saveHash();const r=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname,data:{invite:String(invite||"").trim().toLowerCase()}}});if(r.error)return{err:/database error saving new user|invite_required/i.test(r.error.message)?"That invite code isn't valid or was already used.":r.error.message};return{needsConfirm:!r.data.session}},
+  isAdmin:false,
+  async checkAdmin(){try{const r=await sb.rpc("is_admin");this.isAdmin=!r.error&&r.data===true}catch(e){this.isAdmin=false}return this.isAdmin},
+  async createInvite(){const r=await sb.rpc("create_invite");if(r.error)throw r.error;return r.data},
   async reset(email){this.saveHash();const r=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});return r.error?r.error.message:null},
   async setPassword(password){const r=await sb.auth.updateUser({password});return r.error?r.error.message:null},
   async signOut(){await sb.auth.signOut();location.reload()}};
@@ -424,10 +427,11 @@ window.FAH_AUTH.ready.then(async s=>{if(!s)return;
     <form id="gForm" autocomplete="on">
       <input id="gEmail" type="email" placeholder="Email" autocomplete="email" required>
       <input id="gPass" type="password" placeholder="Password (8+ characters)" autocomplete="current-password" minlength="8">
+      <input id="gInvite" type="text" placeholder="Invite code" autocomplete="off" autocapitalize="off" spellcheck="false" hidden>
       <button type="submit" id="gGo">Sign in</button>
     </form>
     <div class="gmsg" id="gMsg" role="status"></div>
-    <div class="glinks"><button class="glink" id="gSwap">New here? Create an account</button><button class="glink" id="gForgot">Forgot password?</button></div>
+    <div class="glinks"><button class="glink" id="gSwap">New here? You need an invite link.</button><button class="glink" id="gForgot">Forgot password?</button></div>
   </div>
 </div>
 <style>
@@ -450,22 +454,27 @@ window.FAH_AUTH.ready.then(async s=>{if(!s)return;
 <script>
 (function(){
 const A=window.FAH_AUTH,g=document.getElementById("gate"),$g=id=>document.getElementById(id);let mode="in";
-function show(m){mode=m;g.hidden=false;const map={in:["Sign in to see the map, your saves and shared folders.","Sign in","New here? Create an account"],up:["Make a free account. Your saves stay private to you.","Create account","Have an account? Sign in"],reset:["Enter your email and we'll send a reset link.","Send reset link","Back to sign in"],newpw:["Choose a new password.","Save password",""]}[m];
+function show(m){mode=m;g.hidden=false;const map={in:["Sign in to see the map, your saves and shared folders.","Sign in","New here? You need an invite link."],up:["Make a free account with your invite code. Your saves stay private to you.","Create account","Have an account? Sign in"],reset:["Enter your email and we'll send a reset link.","Send reset link","Back to sign in"],newpw:["Choose a new password.","Save password",""]}[m];
   $g("gSub").textContent=map[0];$g("gGo").textContent=map[1];$g("gSwap").textContent=map[2];$g("gSwap").hidden=!map[2];$g("gForgot").hidden=m!=="in";
-  $g("gPass").hidden=m==="reset";$g("gEmail").hidden=m==="newpw";$g("gPass").autocomplete=m==="in"?"current-password":"new-password";$g("gMsg").textContent="";$g("gMsg").className="gmsg";
-  if(/^#folder-/.test(location.hash)&&m==="in")$g("gSub").textContent="Someone shared a folder with you. Sign in or create a free account to open it."}
+  $g("gPass").hidden=m==="reset";$g("gInvite").hidden=m!=="up";$g("gEmail").hidden=m==="newpw";$g("gPass").autocomplete=m==="in"?"current-password":"new-password";$g("gMsg").textContent="";$g("gMsg").className="gmsg";
+  if(/^#folder-/.test(location.hash)&&m==="in")$g("gSub").textContent="Someone shared a folder with you. Sign in to open it.";
+  if(/^#folder-/.test(location.hash)&&m==="up"&&INV)$g("gSub").textContent="Someone shared a folder with you. Make a free account to open it."}
+const INV=(new URLSearchParams(location.search).get("invite")||"").trim();if(INV)$g("gInvite").value=INV;
 function msg(t,ok){$g("gMsg").textContent=t;$g("gMsg").className="gmsg "+(ok?"ok":"err")}
 $g("gSwap").onclick=()=>show(mode==="in"?"up":"in");$g("gForgot").onclick=()=>show("reset");
 $g("gForm").onsubmit=async e=>{e.preventDefault();const em=$g("gEmail").value.trim(),pw=$g("gPass").value;$g("gGo").disabled=true;
   try{if(mode==="in"){if(!pw){msg("Enter your password.");return}const err=await A.signIn(em,pw);if(err){msg(err==="Invalid login credentials"?"That email and password don't match.":err);return}A.saveHash();location.reload()}
-   else if(mode==="up"){if(pw.length<8){msg("Use at least 8 characters.");return}const r=await A.signUp(em,pw);if(r.err){msg(r.err);return}if(r.needsConfirm)msg("Almost done: check your email and tap the confirm link, then come back and sign in.",true);else location.reload()}
+   else if(mode==="up"){if(pw.length<8){msg("Use at least 8 characters.");return}const inv=$g("gInvite").value.trim();if(!inv){msg("You need an invite code. Ask the site owner for an invite link.");return}const r=await A.signUp(em,pw,inv);if(r.err){msg(r.err);return}if(r.needsConfirm)msg("Almost done: check your email and tap the confirm link, then come back and sign in.",true);else location.reload()}
    else if(mode==="reset"){const err=await A.reset(em);if(err){msg(err);return}msg("If that email has an account, a reset link is on its way.",true)}
    else if(mode==="newpw"){if(pw.length<8){msg("Use at least 8 characters.");return}const err=await A.setPassword(pw);if(err){msg(err);return}location.replace(location.pathname)}}
   finally{$g("gGo").disabled=false}};
 A.sb.auth.onAuthStateChange(ev=>{if(ev==="PASSWORD_RECOVERY")show("newpw")});
-A.ready.then(s=>{if(!s){show("in");return}
-  const ph=document.querySelector(".ph .brand>div:last-child")||document.querySelector(".ph");if(ph){const d=document.createElement("div");d.id="acct";d.innerHTML=`<span></span> · <button type="button" id="acctShare">Share site</button> · <button type="button" id="acctOut">Sign out</button>`;d.firstChild.textContent=s.user.email;d.querySelector("#acctOut").onclick=()=>A.signOut();
-  d.querySelector("#acctShare").onclick=async e=>{const b=e.currentTarget,url=window.FAH_SITE||(location.origin+location.pathname);try{if(navigator.share&&/Mobi/i.test(navigator.userAgent)){await navigator.share({title:"Forty Acres Housing Map",url});return}await navigator.clipboard.writeText(url);b.textContent="Link copied"}catch(x){prompt("Copy this link:",url)}setTimeout(()=>b.textContent="Share site",2000)};ph.appendChild(d)}});
+A.ready.then(async s=>{if(!s){show(INV?"up":"in");return}
+  if(INV){const u=new URL(location.href);u.searchParams.delete("invite");history.replaceState(null,"",u.pathname+u.search+u.hash)}
+  const admin=await A.checkAdmin();
+  const ph=document.querySelector(".ph .brand>div:last-child")||document.querySelector(".ph");if(ph){const d=document.createElement("div");d.id="acct";d.innerHTML=`<span></span>${admin?' · <button type="button" id="acctShare">Invite someone</button>':""} · <button type="button" id="acctOut">Sign out</button>`;d.firstChild.textContent=s.user.email;d.querySelector("#acctOut").onclick=()=>A.signOut();
+  if(admin)d.querySelector("#acctShare").onclick=async e=>{const b=e.currentTarget;let url;try{url=(window.FAH_SITE||(location.origin+location.pathname))+"?invite="+encodeURIComponent(await A.createInvite())}catch(x){b.textContent="Couldn't make invite";setTimeout(()=>b.textContent="Invite someone",2500);return}
+    try{await navigator.clipboard.writeText(url);b.textContent="Invite link copied (one person)"}catch(x){prompt("Copy this one-time invite link:",url)}setTimeout(()=>b.textContent="Invite someone",2500)};ph.appendChild(d)}});
 })();
 </script>
 

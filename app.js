@@ -692,6 +692,7 @@ const unslugName=s=>{const t=s.replace(/-/g," ").trim();return t?t.charAt(0).toU
 function cacheFolders(){const o={};for(const f of myFolders)if(folders[f])o[f]={name:folders[f].name,ids:folders[f].ids};store("fahm.folderData",o)}
 function saveMyFolders(){store("fahm.folders",[...myFolders]);cacheFolders();if(myFoldersRef){const ids=[...myFolders];myFoldersRef.set({ids,updatedAt:Date.now()}).catch(()=>{})}}
 function folderIds(f){return (folders[f]&&folders[f].ids)||[]}
+let foldLinkVal="";
 function folderLink(f){const ids=folderIds(f).filter(id=>APTS.some(a=>a.id===id));return SITE+"#folder-"+f+"--title-"+nameSlug(folders[f].name||"shared")+(ids.length?"--"+ids.join("--"):"")}
 function newFid(){const a=new Uint8Array(10);crypto.getRandomValues(a);return [...a].map(b=>"abcdefghijklmnopqrstuvwxyz0123456789"[b%36]).join("")}
 function subFolder(f){if(!DB||folderSubs.has(f))return;folderSubs.add(f);
@@ -719,7 +720,7 @@ function renderFolderBar(){const el=$("#fold");if(!el)return;if(tab==="for"){ren
   if(openFolder&&folders[openFolder]){const x=folders[openFolder];const n=folderIds(openFolder).filter(id=>APTS.some(a=>a.id===id)).length;
     el.innerHTML=`<div class="fbar"><div class="fhead"><button class="fb" id="fBack" aria-label="Back to my saves">‹ My saves</button><b>📁 ${esc(x.name)}</b><span>${n} place${n===1?"":"s"}</span></div>
       ${foldEdit===openFolder?editBox(x.name,"Save"):`<div class="frow"><button class="fb pri" id="fCopy">Copy link to send</button><button class="fb" id="fRename">Rename</button><button class="fb" id="fLeave">Remove from my list</button></div>`}
-      ${foldLinkShown===openFolder?`<div class="frow"><input id="fLink" readonly value="${esc(folderLink(openFolder))}" aria-label="Folder link"></div><div class="fnote">Copied (if not, select the link above and copy it). Paste it into a text.${window.FAH_SITE?" They'll sign in or make an account, then the folder opens for them.":" Anyone with the link can see the map and this folder without logging in."}</div>`:""}
+      ${foldLinkShown===openFolder?`<div class="frow"><input id="fLink" readonly value="${esc(foldLinkVal||folderLink(openFolder))}" aria-label="Folder link"></div><div class="fnote">Copied (if not, select the link above and copy it). Paste it into a text. ${window.FAH_AUTH&&window.FAH_AUTH.isAdmin?"Has a one-time invite code; make a new link for each person.":"Works for people who already have an account; only the site owner can invite new people."}</div>`:""}
       ${linkExtra&&linkExtra.f===openFolder?`<div class="frow"><span class="fnote" style="flex:1">The link you opened has ${linkExtra.ids.length} place${linkExtra.ids.length===1?"":"s"} that ${linkExtra.ids.length===1?"isn't":"aren't"} in your copy yet.</span><button class="fb pri" id="fMerge">Add ${linkExtra.ids.length===1?"it":"them"}</button></div>`:""}<div class="fnote">${window.FAH_SITE?(x.live?"Live: everyone in this folder sees changes right away.":"Connecting…")+" To invite someone, tap <b>Copy link to send</b> and text it. They sign in (or make a free account) and can add or remove places with you.":(x.live?"Saved to your account, so it's the same on all your devices.":"Your changes are saved in this browser.")+" To share changes, tap <b>Copy link to send</b> and text the link. Whoever opens it sees this folder with no login, can add or remove places, and can send a link back."}</div>
       ${n?"":`<div class="fnote">Empty for now. Open any place and tap <b>📁 ${esc(x.name)}</b> to add it.</div>`}${msg}</div>`}
   else{const list=[...myFolders].filter(f=>folders[f]);
@@ -729,14 +730,16 @@ function renderFolderBar(){const el=$("#fold");if(!el)return;if(tab==="for"){ren
       <div class="fnote" style="padding:2px 14px 6px">Your hearts below are just yours.</div>`}
 }
 $("#listView").addEventListener("click",async e=>{const t=e.target.closest("button");if(!t||!t.closest("#fold")||tab!=="saved")return;folderMsg="";
-  if(t.dataset.openFold){openFolder=t.dataset.openFold;foldEdit=null;foldLinkShown=null;subFolder(openFolder)}
+  if(t.dataset.openFold){openFolder=t.dataset.openFold;foldEdit=null;foldLinkShown=null;foldLinkVal="";subFolder(openFolder)}
   else if(t.id==="fNew"){foldEdit="new"}
   else if(t.id==="fBack"){openFolder=null;foldEdit=null;foldLinkShown=null}
   else if(t.id==="fRename"){foldEdit=openFolder}
   else if(t.id==="fCancel"){foldEdit=null}
   else if(t.id==="fSave"){const v=($("#fName").value||"").trim().slice(0,40);if(!v){folderMsg="Give the folder a name.";renderList();return}
     if(foldEdit==="new"){openFolder=createFolder(v)}else if(folders[foldEdit]){folders[foldEdit].name=v;writeFolder(foldEdit)}foldEdit=null}
-  else if(t.id==="fCopy"){foldLinkShown=openFolder;const link=folderLink(openFolder);try{await navigator.clipboard.writeText(link)}catch(err){}}
+  else if(t.id==="fCopy"){foldLinkShown=openFolder;let link=folderLink(openFolder);const A=window.FAH_AUTH;
+    if(A&&A.isAdmin&&A.createInvite){try{const code=await A.createInvite();if(code){const i=link.indexOf("#");link=link.slice(0,i)+"?invite="+encodeURIComponent(code)+link.slice(i)}}catch(err){}}
+    foldLinkVal=link;try{await navigator.clipboard.writeText(link)}catch(err){}}
   else if(t.id==="fMerge"&&linkExtra){const x=folders[linkExtra.f];x.ids=[...x.ids,...linkExtra.ids];writeFolder(linkExtra.f);linkExtra=null}
   else if(t.id==="fLeave"){myFolders.delete(openFolder);saveMyFolders();openFolder=null;foldLinkShown=null}
   renderList();buildPins();if(t.id==="fCopy"){const i=$("#fLink");if(i){i.focus();i.select()}}
