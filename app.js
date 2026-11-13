@@ -673,7 +673,7 @@ $("#ref").onchange=e=>{S.ref=e.target.value;saveFilters();renderList();buildPins
 $("#q").oninput=e=>{query=e.target.value.trim();renderList();buildPins()};
 function setTab(t){tab=t;$("#tabAll").setAttribute("aria-pressed",t==="all");$("#tabSaved").setAttribute("aria-pressed",t==="saved");$("#tabFor").setAttribute("aria-pressed",t==="for");$("#fToggle").hidden=t==="saved";if(t==="saved")toggleFilters(false);if(selected)closeCard();renderList();buildPins()}
 $("#tabAll").onclick=()=>setTab("all");$("#tabSaved").onclick=()=>setTab("saved");$("#tabFor").onclick=()=>setTab("for");
-$("#grab").onclick=()=>$("#panel").classList.toggle("min");
+if(!window.FAH_SHEET)$("#grab").onclick=()=>$("#panel").classList.toggle("min");
 document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(selected)closeCard();else if(filtersOpen)toggleFilters(false)}});
 
 /* ---------- Boot ---------- */

@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Forty Acres Housing Map</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
@@ -245,16 +245,26 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .scale i{display:block;height:4px;border:1.5px solid var(--fg);border-top:0}
 
 @media (max-width:720px){
-  #panel{left:0;right:0;top:auto;bottom:0;width:auto;border-radius:16px 16px 0 0;max-height:58%;
+  #panel{left:0;right:0;top:auto;bottom:0;width:auto;border-radius:18px 18px 0 0;max-height:58%;border-bottom:0;
     padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
   #panel.min{max-height:178px}
+  #panel.sheet{max-height:none;height:var(--sheet-h,45%);transition:height .28s cubic-bezier(.2,.8,.2,1);will-change:height}
+  #panel.sheet.dragging{transition:none}
+  #panel.sheet.peek .scroll{overflow:hidden}
+  .grab{width:44px!important;height:5px!important;margin:8px auto 2px!important;touch-action:none}
+  #panel .ph{touch-action:pan-x;padding:6px 14px 10px;gap:9px}
+  .brand .logo{width:32px;height:32px;border-radius:9px}.brand .logo svg{width:20px;height:20px}
+  .brand h1{font-size:16px}
+  #acct{margin-top:3px}#acct>span:first-child,#acct>span:first-child+.sep{display:none}
+  .search input,#ref,#q,input[type=text],input[type=email],input[type=password],input[type=search],select,textarea{font-size:16px!important}
+  .seg button{padding:8px 6px}
   .grab{display:block!important}
   .brand p{display:none}
   .ctrl{bottom:auto;top:calc(12px + env(safe-area-inset-top,0px))}
   .legend{display:none}
   .hero{height:120px}
 }
-.grab{display:none;width:38px;height:5px;border-radius:3px;background:var(--fg3);opacity:.5;margin:6px auto -4px;border:0;padding:0;cursor:pointer}
+.grab{display:none;flex:none;width:38px;height:5px;border-radius:3px;background:var(--fg3);opacity:.5;margin:6px auto -4px;border:0;padding:0;cursor:pointer}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
@@ -402,6 +412,7 @@ window.FAH_AUTH={sb,ready,
   async checkAdmin(){try{const r=await sb.rpc("is_admin");this.isAdmin=!r.error&&r.data===true}catch(e){this.isAdmin=false}return this.isAdmin},
   async listMembers(){const r=await sb.rpc("list_members");if(r.error)throw r.error;return r.data||[]},
   async setStatus(id,st){const r=await sb.rpc("set_member_status",{target:id,new_status:st});if(r.error)throw r.error},
+  async resend(email){const r=await sb.auth.resend({type:"signup",email,options:{emailRedirectTo:location.origin+location.pathname}});return r.error?r.error.message:null},
   async reset(email){this.saveHash();const r=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});return r.error?r.error.message:null},
   async setPassword(password){const r=await sb.auth.updateUser({password});return r.error?r.error.message:null},
   async signOut(){await sb.auth.signOut();location.reload()}};
@@ -421,6 +432,32 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
 </script>
 
 
+<script>
+/* Phone bottom sheet: drag the handle or the header to peek / half / full. */
+(function(){const mq=matchMedia("(max-width:720px)");if(!mq.matches)return;window.FAH_SHEET=true;
+  const P=document.getElementById("panel"),G=document.getElementById("grab");let state="peek",obs;
+  function peekH(){const sg=P.querySelector(".seg");if(!sg)return 190;return Math.round(sg.getBoundingClientRect().bottom-P.getBoundingClientRect().top+12)}
+  function H(st){const vh=innerHeight;return st==="full"?vh-Math.max(56,(parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sat"))||0)+56):st==="half"?Math.round(vh*.55):peekH()}
+  function set(st,silent){state=st;P.style.setProperty("--sheet-h",H(st)+"px");P.classList.toggle("peek",st==="peek");obs&&obs.disconnect();P.classList.toggle("min",st==="peek");watch();
+    if(!silent)setTimeout(()=>dispatchEvent(new Event("resize")),300)}
+  function watch(){obs=new MutationObserver(()=>{const m=P.classList.contains("min");if(m&&state!=="peek")set("peek");else if(!m&&state==="peek")set("half")});obs.observe(P,{attributes:true,attributeFilter:["class"]})}
+  P.classList.add("sheet");requestAnimationFrame(()=>set("peek",true));
+  let d=null;
+  function down(e){if(e.button>0)return;if(e.target!==G&&e.target.closest("input,select,button,a,label,textarea"))return;
+    d={y:e.clientY,h:P.getBoundingClientRect().height,t:performance.now(),moved:false,id:e.pointerId}}
+  function move(e){if(!d||e.pointerId!==d.id)return;const dy=e.clientY-d.y;if(!d.moved&&Math.abs(dy)<6)return;if(!d.moved){d.moved=true;P.classList.add("dragging");try{e.target.setPointerCapture(e.pointerId)}catch(x){}}
+    const h=Math.max(peekH()-30,Math.min(H("full")+20,d.h-dy));P.style.setProperty("--sheet-h",h+"px");e.preventDefault()}
+  function up(e){if(!d||e.pointerId!==d.id)return;const wasMoved=d.moved;P.classList.remove("dragging");
+    if(!wasMoved){if(e.target===G)set(state==="peek"?"half":state==="half"?"full":"peek");d=null;return}
+    const h=P.getBoundingClientRect().height,v=(e.clientY-d.y)/Math.max(1,performance.now()-d.t);d=null;
+    if(v<-.5)set(state==="peek"?"half":"full");else if(v>.5)set(state==="full"?"half":"peek");
+    else{const opts=["peek","half","full"].map(s=>[s,Math.abs(H(s)-h)]).sort((a,b)=>a[1]-b[1]);set(opts[0][0])}}
+  [G,P.querySelector(".ph")].forEach(el=>{el.addEventListener("pointerdown",down)});
+  addEventListener("pointermove",move,{passive:false});addEventListener("pointerup",up);addEventListener("pointercancel",up);
+  addEventListener("resize",()=>{if(!P.classList.contains("dragging"))P.style.setProperty("--sheet-h",H(state)+"px")});
+  window.FAH_SHEET={set,get state(){return state}};
+})();
+</script>
 <div id="gate" hidden>
   <div class="gcard">
     <div class="glogo">🏠</div>
@@ -465,7 +502,7 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
 #gForm[hidden],.glinks[hidden],.gpw[hidden]{display:none}
 .gpw{position:relative;display:flex}.gpw input{flex:1;min-width:0;padding-right:44px!important}
 #gEye{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;color:#7a6f66;cursor:pointer;padding:6px;display:grid;place-items:center;border-radius:8px}#gEye:hover{color:#bf5700}#gEye.on .eslash{display:none}
-#acct{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;font-size:11.5px;color:var(--fg2);margin-top:6px;line-height:1.3}#acct button{border:0;background:none;color:var(--accent);font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;padding:0}
+#acct .sep{font-style:normal}#acct{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;font-size:11.5px;color:var(--fg2);margin-top:6px;line-height:1.3}#acct button{border:0;background:none;color:var(--accent);font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;padding:0}
 </style>
 <script>
 (function(){
@@ -475,15 +512,17 @@ function show(m){mode=m;g.hidden=false;const map={in:["Sign in to see the map, y
   $g("gPw").hidden=m==="reset";$g("gNote").hidden=m!=="up";$g("gCount").hidden=m!=="up";$g("gForm").hidden=false;$g("gWait").hidden=true;$g("glinks").hidden=false;$g("gEmail").hidden=m==="newpw";$g("gPass").autocomplete=m==="in"?"current-password":"new-password";$g("gMsg").textContent="";$g("gMsg").className="gmsg";
   if(/^#folder-/.test(location.hash)&&m==="in")$g("gSub").textContent="Someone shared a folder with you. Sign in or make an account to open it."}
 function wait(denied){g.hidden=false;$g("gForm").hidden=true;$g("glinks").hidden=true;$g("gWait").hidden=false;$g("gMsg").textContent="";
-  $g("gSub").textContent=denied?"This account wasn't approved, so it can't open the map.":"Your account needs to be approved before you can see the map. Check back soon.";$g("gAgain").hidden=!!denied}
+  $g("gSub").textContent=denied?"This account wasn't approved, so it can't open the map.":"You're signed in, but your account is still waiting for the site owner to approve it. Check back soon.";$g("gAgain").hidden=!!denied}
 $g("gAgain").onclick=()=>location.reload();$g("gOut").onclick=()=>A.signOut();
 $g("gEye").onclick=()=>{const i=$g("gPass"),show=i.type==="password";i.type=show?"text":"password";const b=$g("gEye");b.classList.toggle("on",show);b.setAttribute("aria-pressed",show);b.setAttribute("aria-label",show?"Hide password":"Show password")};
 $g("gNote").oninput=()=>{$g("gCount").textContent=$g("gNote").value.length+"/50"};
+function needConfirm(em){msg("You still need to confirm your email. Tap the link we sent to "+em+", then sign in. ",true);
+  const b=document.createElement("button");b.type="button";b.className="glink";b.textContent="Resend email";b.onclick=async()=>{b.disabled=true;const e=await A.resend(em);b.textContent=e?"Couldn't resend. Try again in a minute.":"Sent. Check your inbox and spam."};$g("gMsg").appendChild(b)}
 function msg(t,ok){$g("gMsg").textContent=t;$g("gMsg").className="gmsg "+(ok?"ok":"err")}
 $g("gSwap").onclick=()=>show(mode==="in"?"up":"in");$g("gForgot").onclick=()=>show("reset");
 $g("gForm").onsubmit=async e=>{e.preventDefault();const em=$g("gEmail").value.trim(),pw=$g("gPass").value;$g("gGo").disabled=true;
-  try{if(mode==="in"){if(!pw){msg("Enter your password.");return}const err=await A.signIn(em,pw);if(err){msg(err==="Invalid login credentials"?"That email and password don't match.":err);return}A.saveHash();location.reload()}
-   else if(mode==="up"){if(pw.length<8){msg("Use at least 8 characters.");return}const r=await A.signUp(em,pw,$g("gNote").value);if(r.err){msg(r.err);return}if(r.needsConfirm){wait(false);msg("Check your email and tap the confirm link. Then your account needs to be approved before you can see the map.",true);$g("gAgain").hidden=true}else location.reload()}
+  try{if(mode==="in"){if(!pw){msg("Enter your password.");return}const err=await A.signIn(em,pw);if(err){if(/not confirmed/i.test(err)){needConfirm(em);return}msg(err==="Invalid login credentials"?"That email and password don't match.":err);return}A.saveHash();location.reload()}
+   else if(mode==="up"){if(pw.length<8){msg("Use at least 8 characters.");return}const r=await A.signUp(em,pw,$g("gNote").value);if(r.err){msg(r.err);return}if(r.needsConfirm){wait(false);$g("gSub").textContent="Almost done! Two steps left:";msg("1) Confirm your email: tap the link we sent to "+em+". 2) Wait for the site owner to approve your account. Then sign in.",true);$g("gAgain").hidden=true;$g("gOut").textContent="Back to sign in";$g("gOut").onclick=()=>{$g("gOut").textContent="Sign out";$g("gOut").onclick=()=>A.signOut();show("in")}}else location.reload()}
    else if(mode==="reset"){const err=await A.reset(em);if(err){msg(err);return}msg("If that email has an account, a reset link is on its way.",true)}
    else if(mode==="newpw"){if(pw.length<8){msg("Use at least 8 characters.");return}const err=await A.setPassword(pw);if(err){msg(err);return}location.replace(location.pathname)}}
   finally{$g("gGo").disabled=false}};
@@ -492,7 +531,7 @@ A.ready.then(async s=>{if(!s){show("in");return}
   const st=await A.status;if(st!=="approved"){wait(st==="denied");return}
   const admin=await A.checkAdmin();
   const ph=document.querySelector(".ph .brand>div:last-child")||document.querySelector(".ph");if(ph){const d=document.createElement("div");d.id="acct";
-  d.innerHTML=`<span></span>${admin?' · <button type="button" id="acctAppr">Approve people</button> · <button type="button" id="acctShare">Share site</button>':""} · <button type="button" id="acctOut">Sign out</button>`;d.firstChild.textContent=s.user.email;d.querySelector("#acctOut").onclick=()=>A.signOut();
+  const sep='<i class="sep">·</i>';d.innerHTML=`<span></span>${admin?sep+'<button type="button" id="acctAppr">Approve people</button>'+sep+'<button type="button" id="acctShare">Share site</button>':""}${sep}<button type="button" id="acctOut">Sign out</button>`;d.firstChild.textContent=s.user.email;d.querySelector("#acctOut").onclick=()=>A.signOut();
   if(admin){d.querySelector("#acctShare").onclick=async e=>{const b=e.currentTarget,url=window.FAH_SITE||(location.origin+location.pathname);try{await navigator.clipboard.writeText(url);b.textContent="Link copied"}catch(x){prompt("Copy this link:",url)}setTimeout(()=>b.textContent="Share site",2000)};
     const ab=d.querySelector("#acctAppr");ab.onclick=openAppr;
     A.listMembers().then(ms=>{const n=ms.filter(m=>m.status==="pending").length;if(n)ab.textContent="Approve people ("+n+")"}).catch(()=>{})}
