@@ -784,7 +784,7 @@ function toggleInFolder(f,id){const x=folders[f];if(!x)return;x.ids=x.ids.includ
 /* ---------- shared folder extras: votes, status, smart groups, everyone's preferences ---------- */
 let foldFilter="all";
 function fPeople(f){const x=folders[f];if(!x)return[];const P=x.parent&&folders[x.parent]?folders[x.parent]:x;const pb=(x.prefsBy&&x.prefsBy.length?x.prefsBy:P.prefsBy)||[];return pb.length?pb.map(p=>p.name):(x.people||P.people||[])}
-function fPrefs(f){const x=folders[f];if(!x)return[];const P=x.parent&&folders[x.parent]?folders[x.parent]:x;return (x.prefsBy&&x.prefsBy.length?x.prefsBy:P.prefsBy)||[]}
+function fPrefs(f){const x=folders[f];if(!x)return[];const P=x.parent&&folders[x.parent]?folders[x.parent]:x;const L=(x.prefsBy&&x.prefsBy.length?x.prefsBy:P.prefsBy)||[];return L.map(p=>p.mine||p.name==="You"?{...p,prefs:PREFS||p.prefs}:p)}
 const sharedish=f=>folders[f]&&!folders[f].private;
 function avgMax(f){const ms=fPrefs(f).map(p=>p.prefs&&p.prefs.max).filter(v=>typeof v==="number"&&v>0);return ms.length?Math.round(ms.reduce((a,b)=>a+b,0)/ms.length):null}
 /* Maybe delete: 👎 from anyone, moved by someone, or auto-sorted because it doesn't match someone's preferences */
@@ -861,7 +861,8 @@ function openTour(f,id){const a=APTS.find(y=>y.id===id);if(!a)return;let d=$("#t
   d.querySelectorAll("[data-tv]").forEach(b=>b.onclick=()=>{v=+b.dataset.tv;d.querySelectorAll("[data-tv]").forEach(y=>y.setAttribute("aria-pressed",y===b))});
   const go=async full=>{try{await window.FAH_NOTES.status(f,id,"toured");if(full){if(v)await window.FAH_NOTES.vote(f,id,v);const t=$("#tTxt").value.trim();if(t)await window.FAH_NOTES.set(f,id,t)}}catch(e){folderMsg="Couldn't save that. Try again.";renderList()}close()};
   d.querySelector("#tSkip").onclick=()=>go(false);d.querySelector("#tSave").onclick=()=>go(true)}
-function openCompare(f){const P=fPrefs(f);let d=$("#cmpDlg");if(!d){d=document.createElement("div");d.id="cmpDlg";document.body.appendChild(d)}
+function openCompare(f,again){if(!again){try{const root=folders[f]&&folders[f].parent&&folders[folders[f].parent]?folders[f].parent:f;window.FAH_NOTES.reload(root).then(()=>{const d=$("#cmpDlg");if(d&&!d.hidden)openCompare(f,true)}).catch(()=>{})}catch(e){}}
+  const P=fPrefs(f).map(p=>p.mine||p.name==="You"?{...p,prefs:PREFS||p.prefs}:p);if(!P.some(p=>p.mine||p.name==="You"))P.unshift({name:"You",mine:true,prefs:PREFS});let d=$("#cmpDlg");if(!d){d=document.createElement("div");d.id="cmpDlg";document.body.appendChild(d)}
   const ppl=P.map(p=>p.name),pr=P.map(p=>p.prefs||{});const yes='<span class="ck">✓</span>',no='<span class="dash">–</span>';
   const rows=[["Max price",p=>p.max?money(p.max):no],["Max walk",p=>p.walk?p.walk+" min":no],["Drives?",p=>p.noCar?"No":p.drive?"≤ "+p.drive+" min":no],["Bedroom",p=>({own:"Own",shared:"Shared",any:"Either"})[p.room||"own"]],
     ["Type",p=>(p.kinds||[]).length?(p.kinds||[]).map(k=>({apartment:"Apt",dorm:"Dorm",house:"House"})[k]||k).join(", "):no],["Floor plans",p=>(p.plans||[]).length?p.plans.join(", "):no]];
