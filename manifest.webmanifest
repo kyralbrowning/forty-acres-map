@@ -5,7 +5,7 @@
   "start_url": "/forty-acres-map/",
   "scope": "/forty-acres-map/",
   "display": "standalone",
-  "background_color": "#c55f0e",
+  "background_color": "#bf5700",
   "theme_color": "#bf5700",
   "icons": [
     {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
