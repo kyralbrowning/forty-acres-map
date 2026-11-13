@@ -228,7 +228,8 @@ const AMEN=[
  ["wd","In-unit washer/dryer",a=>a.inUnitLaundry],
  ["util","All bills paid",a=>a.utilitiesIncluded==null?null:/all utilities|all bills/i.test(a.utilitiesIncluded)],
  ["school","School-year lease",a=>a.leaseTerm==null?null:/9-month|academic|school|semester/i.test(a.leaseTerm)],
- ["park","Parking $100 or less",a=>a.parkingPerMonth==null?null:a.parkingPerMonth<=100]
+ ["haspark","Has parking",a=>a.parkingPerMonth!=null||(a.tagSet&&a.tagSet.has("garage_parking"))?true:null],
+ ["park","Parking $100/month or less",a=>a.parkingPerMonth==null?null:a.parkingPerMonth<=100]
 ];
 const HOODS=[...new Set(APTS.map(a=>a.neighborhood||"Other"))].sort((a,b)=>APTS.filter(x=>x.neighborhood===b).length-APTS.filter(x=>x.neighborhood===a).length);
 
@@ -287,7 +288,7 @@ function prPref(a,room){const r=room||"own";if(r==="shared")return a.shared;if(r
 function prefChecks(a,p){const c=[],d=dist(a);
   if(p.max){const pr=prPref(a,p.room);c.push(pr!=null&&pr<=p.max)}
   if(p.walk)c.push(d.walk<=p.walk);
-  if(p.drive)c.push(d.drive<=p.drive);
+  if(p.drive&&!p.noCar)c.push(d.drive<=p.drive);
   for(const k of p.must||[]){const f=AMEN.find(x=>x[0]===k);if(f)c.push(f[2](a)===true);else if(k==="balc")c.push(!!balcKind(a))}
   if((p.hoods||[]).length)c.push(p.hoods.includes(a.neighborhood));
   if((p.kinds||[]).length)c.push(p.kinds.includes(a.kind||"apartment"));
@@ -585,7 +586,8 @@ function renderList(){
     (hidden&&(n||query)?`${arr.length} of ${APTS.length} places · <button class="linkbtn" id="clearAll" style="font-size:12px;padding:0">Show all ${APTS.length}</button>`:`All ${APTS.length} places`);
   const ca=$("#clearAll");if(ca)ca.onclick=()=>{const keep={ref:S.ref,sort:S.sort,rings:S.rings};S=Object.assign({},DEF,keep);query="";$("#q").value="";refresh()};
   if(!arr.length){ul.innerHTML=tab==="saved"?`<li class="empty"><b>No saved apartments yet</b>Tap the heart on any place to save it here. Your hearts show up on the map too.</li>`:`<li class="empty"><b>No places match</b>Try a longer walk, a higher price, or remove a filter.</li>`;return}
-  ul.innerHTML=arr.map(a=>{const d=dist(a);const tags=[a.tagSet.has("pool")&&"Pool",balcKind(a)&&BALC_LABEL[balcKind(a)],a.tagSet.has("gym")&&"Gym",a.windowsEveryBedroom&&"Windows",a.privateBath===true&&"Own bath",(a.tagSet.has("hot_tub")||a.tagSet.has("sauna"))&&"Hot tub/sauna",(a.tagSet.has("game_room")||a.tagSet.has("pool_table"))&&"Game room"].filter(Boolean).slice(0,4);
+  ul.innerHTML=arr.map(a=>{const d=dist(a);const pk=a.parkingPerMonth!=null?(a.parkingPerMonth===0?"Free parking":"Parking "+money(a.parkingPerMonth)+"/mo"):(a.tagSet.has("garage_parking")||a.tagSet.has("parking"))?"Parking":null;
+    const tags=[a.tagSet.has("pool")&&"Pool",pk,balcKind(a)&&BALC_LABEL[balcKind(a)],a.tagSet.has("gym")&&"Gym",a.windowsEveryBedroom&&"Windows",a.privateBath===true&&"Own bath",(a.tagSet.has("hot_tub")||a.tagSet.has("sauna"))&&"Hot tub/sauna",(a.tagSet.has("game_room")||a.tagSet.has("pool_table"))&&"Game room"].filter(Boolean).slice(0,5);
    const rec=tab==="for"&&recCache?recCache.find(r=>r.a.id===a.id):null;const why=rec&&rec.because?whyLike(a,rec.because):[];
    return `<li class="res${a.id===selected?" sel":""}" data-id="${a.id}" tabindex="0" role="button" aria-label="${esc(a.name)}">${thumb(a)}<div class="rt"><b>${esc(a.name)}</b>${rec&&rec.because?`<span class="why">Like ${esc(rec.because.name)}${why.length?": "+esc(why.join(", ")):""}</span>`:""}<span>${a.rating!=null?ratingHtml(a)+" · ":""}${a.kind==="dorm"?"Dorm · ":a.kind==="house"?"House · ":""}${esc(a.neighborhood)} · ${tt(d)} · ${d.mi.toFixed(1)} mi</span><div class="tags">${tags.map(t=>`<span class="tag ok">${t}</span>`).join("")}</div></div>
    <div class="rp"><b>${PR(a)!=null?money(PR(a)):"—"}</b><span>${PR(a)!=null?(PR(a)===a.shared?"/mo shared room":a.kind==="house"?"/mo each":a.perApt?"/mo whole apt":"/mo"):"not listed"}</span><button class="icon-btn${hearts.has(a.id)?" on":""}" data-heart="${a.id}" aria-label="${hearts.has(a.id)?"Remove from saved":"Save"} ${esc(a.name)}" aria-pressed="${hearts.has(a.id)}">${hearts.has(a.id)?HEART.replace('width="11" height="11"','width="18" height="18"'):'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.1 0 3.6 1.1 4.3 2.4h2c.7-1.3 2.2-2.4 4.3-2.4 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21z"/></svg>'}</button></div></li>`}).join("");
@@ -632,7 +634,7 @@ function renderCard(){
     <div class="sec"><h4>${a.kind==="house"?"Rent for the whole house":a.kind==="dorm"?"Price per person (monthly equivalent)":a.perApt?"Price for the whole apartment":"Price per person"}</h4><div class="price">${esc(PR(a)!=null?"From "+money(PR(a)):"Price not listed")}${PR(a)!=null?'<span style="font-size:13px;font-weight:500;color:var(--fg2)"> /mo</span>':""}</div>${a.kind==="house"&&a.own!=null?`<div class="note"><b>About ${money(a.own)}/mo each if all ${a.beds} bedrooms are filled</b></div>`:a.shared!=null?`<div class="note"><b>Your own bedroom: ${a.own!=null?"from "+money(a.own)+"/mo":"price not listed"} · Shared bedroom: from ${money(a.shared)}/mo</b></div>`:""}${a.priceMax&&a.priceMax!==a.priceMin?`<div class="note">All units: ${esc(priceTxt(a))}/mo</div>`:""}<div class="note">${esc(a.priceNote||"")}</div></div>
     ${a.deadlineOrSpecial?`<div class="callout deal"><b>Deal or deadline:</b> ${esc(a.deadlineOrSpecial)}</div>`:""}
     <div class="sec"><h4>Floor plans</h4><div class="plans">${plans}</div><div class="note">Green plans have a bathroom for every bedroom.</div></div>
-    <div class="sec"><h4>Availability</h4><dl class="kv"><dt>Status</dt><dd>${esc(a.availability||"Not listed")}</dd><dt>Lease</dt><dd>${esc(a.leaseTerm||"Not listed")}</dd><dt>Utilities</dt><dd>${esc(a.utilitiesIncluded||"Not listed")}</dd><dt>Parking</dt><dd>${a.parkingPerMonth!=null?money(a.parkingPerMonth)+"/mo":"Not listed"}</dd></dl></div>
+    <div class="sec"><h4>Availability</h4><dl class="kv"><dt>Status</dt><dd>${esc(a.availability||"Not listed")}</dd><dt>Lease</dt><dd>${esc(a.leaseTerm||"Not listed")}</dd><dt>Utilities</dt><dd>${esc(a.utilitiesIncluded||"Not listed")}</dd><dt>Parking</dt><dd>${a.parkingPerMonth!=null?(a.parkingPerMonth===0?"Free":money(a.parkingPerMonth)+"/month"):(a.tagSet.has("garage_parking")?"Garage parking (price not listed)":"Not listed")}</dd></dl></div>
     <div class="sec"><h4>Amenities</h4><div class="am">
       ${amRow("Pool",a.pool,a.rooftopPool?"rooftop":"")}
       ${amRow("Private bathroom",a.privateBath===true?true:a.privateBath==="some"?true:a.privateBath,a.privateBath==="some"?"some plans":"")}
@@ -711,7 +713,7 @@ $("#sort").onchange=e=>{S.sort=e.target.value;saveFilters();renderList()};
 function toggleFilters(open){filtersOpen=open??!filtersOpen;$("#filters").hidden=!filtersOpen;$("#fToggle").setAttribute("aria-expanded",filtersOpen);if(filtersOpen){if(selected)closeCard();$("#scroll").scrollTop=0;if(innerWidth<=720)$("#panel").classList.remove("min")}}
 $("#fToggle").onclick=()=>toggleFilters();
 $("#ref").innerHTML=REFS.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("");
-if($("#mode")){$("#mode").value=S.mode||"walk";$("#mode").onchange=e=>{S.mode=e.target.value;saveFilters();renderList();buildPins();placeRings();if(selected)renderCard()}}
+setTimeout(()=>{try{applyNoCar()}catch(e){}},0);if($("#mode")){$("#mode").value=S.mode||"walk";$("#mode").onchange=e=>{S.mode=e.target.value;saveFilters();renderList();buildPins();placeRings();if(selected)renderCard()}}
 $("#ref").onchange=e=>{S.ref=e.target.value;saveFilters();renderList();buildPins();placeLabels();placeRings();if(selected)renderCard()};
 $("#q").oninput=e=>{query=e.target.value.trim();renderList();buildPins()};
 function setTab(t){tab=t;$("#tabAll").setAttribute("aria-pressed",t==="all");$("#tabSaved").setAttribute("aria-pressed",t==="saved");$("#tabFor").setAttribute("aria-pressed",t==="for");$("#fToggle").hidden=t==="saved";if(t==="saved")toggleFilters(false);if(selected)closeCard();renderList();buildPins()}
@@ -860,30 +862,34 @@ function renderPrefs(el){const p=PREFS||{};const editing=prefsEdit||(!PREFS&&!he
   el.innerHTML=`<div class="fbar pform"><div class="fhead"><b>Your preferences</b><span>Saved to your account</span></div>${prefFields(p)}
    <div class="frow"><button class="fb pri" id="pSave">Save and show my picks</button>${PREFS?'<button class="fb" id="pCancel">Cancel</button><button class="fb" id="pClear">Clear</button>':""}</div>
    ${trendHtml}</div>`;el.dataset.pbox="1";el._draft=draftOf(p)}
-function draftOf(p){return{max:p.max||null,walk:p.walk||null,drive:p.drive||null,must:[...(p.must||[])],hoods:[...(p.hoods||[])],kinds:[...(p.kinds||[])],room:p.room||"own",plans:[...(p.plans||[])],balc:[...(p.balc||[])],minRating:p.minRating||0,strict:!!p.strict}}
+function draftOf(p){return{max:p.max||null,walk:p.walk||null,drive:p.drive||null,must:[...(p.must||[])],hoods:[...(p.hoods||[])],kinds:[...(p.kinds||[])],room:p.room||"own",plans:[...(p.plans||[])],balc:[...(p.balc||[])],minRating:p.minRating||0,strict:!!p.strict,noCar:!!p.noCar}}
 function prefFields(p){const chips=(arr,key,sel)=>arr.map(([k,l])=>`<button type="button" class="chip" aria-pressed="${sel.includes(k)}" data-p${key}="${esc(k)}">${esc(l)}</button>`).join("");
   const one=(arr,key,v)=>arr.map(([k,l])=>`<button type="button" class="chip" aria-pressed="${String(v)===String(k)}" data-p${key}="${esc(k)}">${esc(l)}</button>`).join("");
   const MUST=[...AMEN.map(([k,l])=>[k,l]),["balc","Balcony"]];
-  return `<label class="ptog"><input type="checkbox" id="pStrict" ${p.strict?"checked":""}><span><b>Only show places that match</b><i>Off: your preferences are a guide, and other good places can still show up.</i></span></label>
+  return `<label class="ptog"><input type="checkbox" id="pNoCar" ${p.noCar?"checked":""}><span><b>I don't drive</b><i>Walking only. Hides drive times and driving options.</i></span></label>
+   <label class="ptog"><input type="checkbox" id="pStrict" ${p.strict?"checked":""}><span><b>Only show places that match</b><i>Off: your preferences are a guide, and other good places can still show up.</i></span></label>
    <div class="fnote">Type</div><div class="chips">${chips([["apartment","Apartments"],["dorm","Dorms"],["house","Houses"]],"k",p.kinds||[])}</div>
    <div class="fnote">Bedroom</div><div class="chips">${one([["own","My own bedroom"],["shared","Shared bedroom"],["any","Either"]],"r",p.room||"own")}</div>
    <div class="fnote">Max price: <b id="pMaxO">${p.max?money(p.max):"Any"}</b></div><input type="range" id="pMax" min="600" max="2100" step="50" value="${p.max||2100}">
    <div class="fnote">Max walk to campus: <b id="pWalkO">${p.walk?p.walk+" min":"Any"}</b></div><input type="range" id="pWalk" min="5" max="60" step="5" value="${p.walk||60}">
-   <div class="fnote">Max drive to campus: <b id="pDriveO">${p.drive?p.drive+" min":"Any"}</b></div><input type="range" id="pDrive" min="5" max="30" step="5" value="${p.drive||30}">
+   <div class="pdrive"${p.noCar?" hidden":""}><div class="fnote">Max drive to campus: <b id="pDriveO">${p.drive?p.drive+" min":"Any"}</b></div><input type="range" id="pDrive" min="5" max="30" step="5" value="${p.drive||30}"></div>
    <div class="fnote">Floor plans</div><div class="chips">${chips(PLAN_CHIPS,"pl",p.plans||[])}</div>
    <div class="fnote">Must have</div><div class="chips">${chips(MUST,"m",p.must||[])}</div>
    <div class="fnote">Balcony</div><div class="chips">${chips(BALC_FILTERS,"b",p.balc||[])}</div>
    <div class="fnote">Rating</div><div class="chips">${one([[0,"Any"],[3.5,"3.5+ ★"],[4,"4.0+ ★"],[4.5,"4.5+ ★"]],"rt",p.minRating||0)}</div>
    <div class="fnote">Neighborhoods</div><div class="chips">${chips(HOODS.map(h=>[h,h]),"h",p.hoods||[])}</div>`}
-function prefSummary(){const p=PREFS;const L=(arr,ks)=>(ks||[]).map(k=>(arr.find(x=>String(x[0])===String(k))||[,k])[1]);return [...L([["apartment","Apartments"],["dorm","Dorms"],["house","Houses"]],p.kinds),p.room==="shared"?"shared bedroom":null,p.max?"up to "+money(p.max):null,p.walk?"≤"+p.walk+" min walk":null,p.drive?"≤"+p.drive+" min drive":null,...L(PLAN_CHIPS,p.plans),p.minRating?p.minRating+"+ ★":null,...L(BALC_FILTERS,p.balc).map(x=>x.toLowerCase()),...(p.must||[]).map(k=>((AMEN.find(x=>x[0]===k)||PREF_MUST.find(x=>x[0]===k)||[,k])[1]).toLowerCase()),(p.hoods||[]).length?p.hoods.join(", "):null].filter(Boolean).join(" · ")||"anything"}
+function prefSummary(){const p=PREFS;const L=(arr,ks)=>(ks||[]).map(k=>(arr.find(x=>String(x[0])===String(k))||[,k])[1]);return [p.noCar?"walking only":null,...L([["apartment","Apartments"],["dorm","Dorms"],["house","Houses"]],p.kinds),p.room==="shared"?"shared bedroom":null,p.max?"up to "+money(p.max):null,p.walk?"≤"+p.walk+" min walk":null,p.drive?"≤"+p.drive+" min drive":null,...L(PLAN_CHIPS,p.plans),p.minRating?p.minRating+"+ ★":null,...L(BALC_FILTERS,p.balc).map(x=>x.toLowerCase()),...(p.must||[]).map(k=>((AMEN.find(x=>x[0]===k)||PREF_MUST.find(x=>x[0]===k)||[,k])[1]).toLowerCase()),(p.hoods||[]).length?p.hoods.join(", "):null].filter(Boolean).join(" · ")||"anything"}
 function writePrefs(){if(prefsRef)prefsRef.set(Object.assign({},PREFS||{cleared:true},{meta:PMETA,updatedAt:Date.now()})).catch(()=>{})}
-function savePrefs(p){PREFS=p;store("fahm.prefs",p);writePrefs();recCache=null;renderList();buildPins()}
+function savePrefs(p){PREFS=p;store("fahm.prefs",p);writePrefs();recCache=null;applyNoCar();renderList();buildPins()}
+function applyNoCar(){const nc=!!(PREFS&&PREFS.noCar),m=$("#mode");if(!m)return;[...m.options].forEach(o=>{if(o.value!=="walk"){o.hidden=nc;o.disabled=nc}});
+  if(nc&&S.mode!=="walk"){S.mode="walk";m.value="walk";saveFilters();renderList();buildPins();placeRings()}m.classList.toggle("walkonly",nc)}
 document.addEventListener("input",e=>{const el=e.target.closest("[data-pbox]");if(!el||!el._draft)return;const o=id=>el.querySelector(id);if(e.target.id==="pMax"){const v=+e.target.value;el._draft.max=v>=2100?null:v;o("#pMaxO").textContent=v>=2100?"Any":money(v)}
   if(e.target.id==="pWalk"){const v=+e.target.value;el._draft.walk=v>=60?null:v;o("#pWalkO").textContent=v>=60?"Any":v+" min"}
   if(e.target.id==="pDrive"){const v=+e.target.value;el._draft.drive=v>=30?null:v;o("#pDriveO").textContent=v>=30?"Any":v+" min"}
-  if(e.target.id==="pStrict")el._draft.strict=e.target.checked});
+  if(e.target.id==="pStrict")el._draft.strict=e.target.checked;
+  if(e.target.id==="pNoCar"){el._draft.noCar=e.target.checked;if(e.target.checked)el._draft.drive=null;const dv=el.querySelector(".pdrive");if(dv)dv.hidden=e.target.checked}});
 document.addEventListener("click",e=>{const t=e.target.closest("button");if(!t)return;
-  if(t.id==="pEdit"&&t.closest("#fold")){prefsEdit=true;renderList();return}
+  if(t.id==="pEdit"&&t.closest("#fold")){openPrefScreen(false);return}
   const el=t.closest("[data-pbox]");if(!el)return;
   if(el.id==="prefScreen"){if(t.id==="psSkip"){PMETA.welcomed=true;writePrefs();closePrefScreen();return}if(t.id==="psSave"){PMETA.welcomed=true;savePrefs(el._draft);closePrefScreen(true);return}}
   if(t.id==="pCancel"){prefsEdit=false;renderList();return}
@@ -898,7 +904,7 @@ document.addEventListener("click",e=>{const t=e.target.closest("button");if(!t)r
   if(t.dataset.ph){d.hoods=d.hoods.includes(t.dataset.ph)?d.hoods.filter(x=>x!==t.dataset.ph):[...d.hoods,t.dataset.ph];t.setAttribute("aria-pressed",d.hoods.includes(t.dataset.ph))}});
 (async()=>{try{if(!window.claude||!window.claude.use)return;const [db,user]=await Promise.all([window.claude.use("db"),window.claude.use("user")]);if(!db||!user)return;const uid=await user.id();if(!uid)return;
   prefsRef=db.doc("data/users/"+uid+"/prefs");let first=true;prefsRef.onSnapshot(sn=>{if(sn.exists){const d=sn.data()||{};const A_=x=>Array.isArray(x)?x:[];if(d.meta&&typeof d.meta==="object")PMETA={welcomed:!!d.meta.welcomed,views:d.meta.views&&typeof d.meta.views==="object"?d.meta.views:{}};
-      if(d.cleared){PREFS=null}else{PREFS={max:d.max||null,walk:d.walk||null,drive:d.drive||null,must:A_(d.must),hoods:A_(d.hoods),kinds:A_(d.kinds),room:d.room||"own",plans:A_(d.plans),balc:A_(d.balc),minRating:d.minRating||0,strict:!!d.strict}}store("fahm.prefs",PREFS)}
+      if(d.cleared){PREFS=null}else{PREFS={max:d.max||null,walk:d.walk||null,drive:d.drive||null,must:A_(d.must),hoods:A_(d.hoods),kinds:A_(d.kinds),room:d.room||"own",plans:A_(d.plans),balc:A_(d.balc),minRating:d.minRating||0,strict:!!d.strict,noCar:!!d.noCar}}store("fahm.prefs",PREFS);applyNoCar()}
     else if(first&&PREFS){prefsRef.set(Object.assign({},PREFS,{updatedAt:Date.now()})).catch(()=>{})}if(first)setTimeout(maybeWelcome,900);first=false;recCache=null;if(tab==="for")renderList()},()=>{})}catch(e){}})();
 window.FAH_CTX=()=>{const t=trends();const sv=APTS.filter(a=>hearts.has(a.id));const vw=Object.entries(PMETA.views||{}).sort((x,y)=>y[1]-x[1]).map(([id])=>APTS.find(a=>a.id===id)).filter(a=>a&&!hearts.has(a.id)).slice(0,5);
   return{prefs:PREFS,trends:t,saved:sv.map(a=>a.name),viewed:vw.map(a=>a.name),hoods:HOODS,amen:AMEN.map(([k,l])=>[k,l]),money}};
@@ -907,7 +913,8 @@ function maybeWelcome(){if(PREFS||PMETA.welcomed||document.getElementById("welc"
   document.body.appendChild(d);d.querySelector("#wGo").onclick=()=>{d.remove();openPrefScreen(true)}}
 function openPrefScreen(first){let d=$("#prefScreen");if(!d){d=document.createElement("div");d.id="prefScreen";document.body.appendChild(d)}
   const p=PREFS||{};d.innerHTML=`<div class="pshead"><div><b>${first?"Set your preferences":"Preferences"}</b><span>${first?"You can change these any time in Settings.":"Used for your picks in For you."}</span></div>${first?'<button type="button" class="psskip" id="psSkip">Skip for now</button>':'<button type="button" class="psskip" id="psSkip" aria-label="Close">Cancel</button>'}</div>
-    <div class="psbody fbar pform">${prefFields(p)}</div><div class="psfoot"><button type="button" class="fb pri" id="psSave">${first?"Save and see my picks":"Save"}</button></div>`;
+    <div class="pswrap"><div class="psbody fbar pform">${prefFields(p)}</div></div><div class="psfoot"><button type="button" class="fb pri" id="psSave">${first?"Save and see my picks":"Save"}</button></div>`;
+  d.classList.toggle("modal",!first);d.onclick=e=>{if(e.target===d&&!first)closePrefScreen()};
   d.dataset.pbox="1";d._draft=draftOf(p);d.hidden=false;document.body.classList.add("noscroll")}
 function closePrefScreen(saved){const d=$("#prefScreen");if(d)d.hidden=true;document.body.classList.remove("noscroll");if(saved){setTab("for");const P=$("#panel");if(P)P.classList.remove("min")}}
 window.FAH_PREFS={open:()=>openPrefScreen(false)};

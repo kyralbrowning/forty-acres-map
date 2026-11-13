@@ -120,9 +120,21 @@ Deno.serve(async (req) => {
     const { data: m } = await db.from("members").update({ status: "approved", decided_at: new Date().toISOString() }).eq("user_id", target).select("email").maybeSingle();
     if (!m) return out({ ok: false, error: "Account not found." }, 404);
     // Send a sign-in link by email (uses the "Magic Link" email template).
-    const { error } = await db.auth.signInWithOtp({ email: m.email, options: { shouldCreateUser: false, emailRedirectTo: "https://kyralbrowning.github.io/forty-acres-map/" } });
-    if (error) console.error("approve email:", error.message);
-    return out({ ok: true, emailed: !error });
+    const ok = await sendApproval(m.email);
+    if (!ok) await db.from("members").update({ approval_email_pending: true }).eq("user_id", target);
+    return out({ ok: true, emailed: ok, queued: !ok });
+  }
+  if (body.action === "flush") {
+    // Retry approval emails that couldn't be sent earlier (Supabase's free email limit resets about every hour).
+    const { data: pend } = await db.from("members").select("user_id,email").eq("approval_email_pending", true).eq("status", "approved").limit(3);
+    let sent = 0;
+    for (const m of pend || []) { if (await sendApproval(m.email)) { sent++; await db.from("members").update({ approval_email_pending: false }).eq("user_id", m.user_id); } else break; }
+    return out({ sent });
+  }
+  async function sendApproval(email: string) {
+    const { error } = await db.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: "https://kyralbrowning.github.io/forty-acres-map/" } });
+    if (error) console.error("approval email:", error.message);
+    return !error;
   }
   if (body.action === "title") {
     const q = String(body.q || "").slice(0, 400), a = String(body.a || "").slice(0, 600);
