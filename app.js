@@ -296,7 +296,7 @@ function recommend(){
 function similarTo(a,n){return APTS.filter(c=>c.id!==a.id).map(c=>({c,s:sim(c,a)})).sort((x,y)=>y.s-x.s).slice(0,n)}
 let recCache=null;
 /* ---------- State ---------- */
-const DEF={refV:2,kinds:[],perBed:false,minRating:0,tags:[],balc:[],drive:30,walk:95,price:2100,room:"own",plans:[],am:[],hoods:[],unknown:false,sort:"walk",ref:"edge",rings:true};
+const DEF={mode:"walk",refV:2,kinds:[],perBed:false,minRating:0,tags:[],balc:[],drive:30,walk:95,price:2100,room:"own",plans:[],am:[],hoods:[],unknown:false,sort:"walk",ref:"edge",rings:true};
 let S=Object.assign({},DEF,store("fahm.filters")||{});S.unknown=false;S.perBed=false;S.balc=(S.balc||[]).filter(b=>["every","some","any"].includes(b));S.kinds=S.kinds||[];if(S.refV!==2){S.ref="edge";S.refV=2}S.tags=S.tags||[];S.balc=S.balc||[];S.am=(S.am||[]).filter(k=>["pool","rooftop","bath","win","furn","pets","match","wd","util","school","park"].includes(k));if(S.drive==null)S.drive=30;if(S.walk===65)S.walk=95;
 let tab="all", query="", selected=null, filtersOpen=false;
 let hearts=new Set(store("fahm.hearts")||[]);
@@ -310,7 +310,9 @@ function edgeMiles(a){if(!CAMPUS_W)CAMPUS_W=G.campus.map(p=>P(p[0],p[1]));const 
   for(let i=0,j=poly.length-1;i<poly.length;j=i++){const [xi,yi]=poly[i],[xj,yj]=poly[j];if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))inside=!inside;
     const dx=xj-xi,dy=yj-yi,l2=dx*dx+dy*dy;let u=l2?((x-xi)*dx+(y-yi)*dy)/l2:0;u=Math.max(0,Math.min(1,u));const ex=xi+u*dx-x,ey=yi+u*dy-y;best=Math.min(best,ex*ex+ey*ey)}
   return inside?0:Math.sqrt(best)/MILE_PX}
-function dist(a){const mi=S.ref==="edge"?edgeMiles(a):hav(refPt(),a);const route=mi*1.25;return{mi,route,walk:Math.max(1,Math.round(route*20)),bike:Math.max(1,Math.round(route*6)),drive:Math.max(3,Math.round(3+route*2.2))}}
+const tt=d=>S.mode==="drive"?`${d.drive} min drive`:S.mode==="both"?`${d.walk} min walk · ${d.drive} min drive`:`${d.walk} min walk`;
+const DIST=new Map();function dist(a){const k=a.id+"|"+S.ref;let v=DIST.get(k);if(v)return v;v=dist0(a);DIST.set(k,v);return v}
+function dist0(a){const mi=S.ref==="edge"?edgeMiles(a):hav(refPt(),a);const route=mi*1.25;return{mi,route,walk:Math.max(1,Math.round(route*20)),bike:Math.max(1,Math.round(route*6)),drive:Math.max(3,Math.round(3+route*2.2))}}
 
 function passes(a){
   const d=dist(a);
@@ -356,12 +358,16 @@ function zoomAt(f,cx,cy){const s=Math.min(SMAX,Math.max(SMIN,V.s*f));const k=s/V
 function centerOn(lng,lat,s){const pad=panelPad();const r=mapEl.getBoundingClientRect();const [x,y]=P(lng,lat);const ss=s||V.s;const cx=pad.l+(r.width-pad.l-pad.r)/2,cy=pad.t+(r.height-pad.t-pad.b)/2;setView(ss,cx-x*ss,cy-y*ss)}
 
 let raf=0;function schedule(){if(!raf)raf=requestAnimationFrame(()=>{raf=0;drawView()})}
+let BASE=null,lastMinor=-1;
 function drawView(){
   world.setAttribute("transform",`matrix(${V.s},0,0,${V.s},${V.tx},${V.ty})`);
-  svg.style.setProperty("--k",Math.sqrt(V.s).toFixed(3));
   const z=V.s;
+  // While panning (no zoom change), just slide the pins and labels instead of laying them out again.
+  if(mapEl.classList.contains("dragging")&&BASE&&BASE.s===z){const t=`translate3d(${(V.tx-BASE.tx).toFixed(1)}px,${(V.ty-BASE.ty).toFixed(1)}px,0)`;pinsEl.style.transform=t;labelsEl.style.transform=t;if(hoverId)tip.hidden=true;return}
+  pinsEl.style.transform="";labelsEl.style.transform="";BASE={s:z,tx:V.tx,ty:V.ty};
+  svg.style.setProperty("--k",Math.sqrt(V.s).toFixed(3));
   // minor streets fade in when zoomed
-  world.querySelectorAll(".minor").forEach(e=>e.style.opacity=z<.25?.35:z<.8?.35+.65*(z-.25)/.55:1);
+  const mo=Math.round((z<.25?.35:z<.8?.35+.65*(z-.25)/.55:1)*50)/50;if(mo!==lastMinor){lastMinor=mo;world.querySelectorAll(".minor").forEach(e=>e.style.opacity=mo)}
   placeLabels();placePins();placeRings();updateScale();
   if(hoverId)showTip(hoverId);
 }
@@ -369,14 +375,15 @@ const sx=x=>x*V.s+V.tx, sy=y=>y*V.s+V.ty;
 
 /* pointer handling */
 const ptrs=new Map();let drag=null,pinch=null,moved=false;
-mapEl.addEventListener("pointerdown",e=>{if(e.target.closest(".pin"))return;mapEl.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});moved=false;
-  if(ptrs.size===1){drag={x:e.clientX,y:e.clientY,tx:V.tx,ty:V.ty};mapEl.classList.add("dragging")}
-  if(ptrs.size===2){const [a,b]=[...ptrs.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),s:V.s,tx:V.tx,ty:V.ty,cx:(a.x+b.x)/2,cy:(a.y+b.y)/2};drag=null}});
+mapEl.addEventListener("pointerdown",e=>{if(e.button>0)return;ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});moved=false;
+  if(ptrs.size===1){drag={x:e.clientX,y:e.clientY,tx:V.tx,ty:V.ty}}
+  if(ptrs.size===2){moved=true;mapEl.classList.remove("dragging");try{mapEl.setPointerCapture(e.pointerId)}catch(x){}const [a,b]=[...ptrs.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),s:V.s,tx:V.tx,ty:V.ty,cx:(a.x+b.x)/2,cy:(a.y+b.y)/2};drag=null}});
 mapEl.addEventListener("pointermove",e=>{if(!ptrs.has(e.pointerId))return;ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
   const r=mapEl.getBoundingClientRect();
   if(pinch&&ptrs.size>=2){const [a,b]=[...ptrs.values()];const d=Math.hypot(a.x-b.x,a.y-b.y);const s=Math.min(SMAX,Math.max(SMIN,pinch.s*d/pinch.d));const k=s/pinch.s;const cx=pinch.cx-r.left,cy=pinch.cy-r.top;const ncx=(a.x+b.x)/2-r.left,ncy=(a.y+b.y)/2-r.top;setView(s,ncx-(cx-pinch.tx)*k,ncy-(cy-pinch.ty)*k);moved=true}
-  else if(drag){const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>3)moved=true;setView(V.s,drag.tx+dx,drag.ty+dy)}});
-const endPtr=e=>{ptrs.delete(e.pointerId);if(ptrs.size<2)pinch=null;if(ptrs.size===0){drag=null;mapEl.classList.remove("dragging")}else if(ptrs.size===1){const p=[...ptrs.values()][0];drag={x:p.x,y:p.y,tx:V.tx,ty:V.ty}}};
+  else if(drag){const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(!moved&&Math.hypot(dx,dy)<(e.pointerType==="mouse"?4:9))return;
+    if(!moved){moved=true;mapEl.classList.add("dragging");try{mapEl.setPointerCapture(e.pointerId)}catch(x){}}setView(V.s,drag.tx+dx,drag.ty+dy)}});
+const endPtr=e=>{ptrs.delete(e.pointerId);if(ptrs.size<2)pinch=null;if(ptrs.size===0){drag=null;if(mapEl.classList.contains("dragging")){mapEl.classList.remove("dragging");schedule()}}else if(ptrs.size===1){const p=[...ptrs.values()][0];drag={x:p.x,y:p.y,tx:V.tx,ty:V.ty}}};
 mapEl.addEventListener("pointerup",endPtr);mapEl.addEventListener("pointercancel",endPtr);
 mapEl.addEventListener("wheel",e=>{e.preventDefault();const r=mapEl.getBoundingClientRect();const f=Math.exp(-e.deltaY*(e.ctrlKey?.012:.0022));zoomAt(f,e.clientX-r.left,e.clientY-r.top)},{passive:false});
 mapEl.addEventListener("dblclick",e=>{if(e.target.closest(".pin"))return;const r=mapEl.getBoundingClientRect();zoomAt(2,e.clientX-r.left,e.clientY-r.top)});
@@ -447,33 +454,37 @@ function buildLabels(){
     labelsEl.appendChild(d);labelEls.push([L,d])}
   const tw=document.createElement("div");tw.className="tower";tw.innerHTML=`<div class="tw" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11 2h2v3h2v4h-1v11h3v2H7v-2h3V9H9V5h2z"/></svg></div><div class="tl" id="refName"></div>`;labelsEl.appendChild(tw);
   for(const m of [10,20,30]){const d=document.createElement("div");d.className="lbl ring-lbl";d.dataset.ring=m;d.textContent=m+" min walk";labelsEl.appendChild(d)}
+  for(const m of [5,10]){const d=document.createElement("div");d.className="lbl ring-lbl drive";d.dataset.ring="d"+m;d.textContent="~"+m+" min drive";labelsEl.appendChild(d)}
   {const d=document.createElement("div");d.className="lbl ring-lbl drive";d.dataset.ring="drive";d.textContent="~20 min drive";labelsEl.appendChild(d)}
 }
 function placeLabels(){
   const z=V.s;
   for(const [L,d] of labelEls){const show=z>=L.z*.5&&(L.c!=="hood"||z<L.z*4.5);if(!show){d.hidden=true;continue}d.hidden=false;
-    const [x,y]=P(...L.at);const w=d.offsetWidth,h=d.offsetHeight;
+    const [x,y]=P(...L.at);if(!d._w){d._w=d.offsetWidth;d._h=d.offsetHeight}const w=d._w,h=d._h;
     d.style.transform=`translate(${(sx(x)).toFixed(1)}px,${(sy(y)).toFixed(1)}px) rotate(${L.r||0}deg) translate(${-w/2}px,${-h/2}px)`}
   const r=refPt();const [x,y]=P(r.lng,r.lat);const tw=labelsEl.querySelector(".tower");tw.style.transform=`translate(${sx(x)-15}px,${sy(y)-15}px)`;
   $("#refName").textContent=S.ref==="edge"?"UT Tower":r.name;
 }
+let RING_KEY="";const lsz=d=>{if(!d._w){d._w=d.offsetWidth;d._h=d.offsetHeight}return [d._w,d._h]};
 function placeRings(){
-  const g=$("#ringG");g.innerHTML="";const r=refPt();const [x,y]=P(r.lng,r.lat);
-  labelsEl.querySelectorAll("[data-ring]").forEach(d=>d.hidden=!S.rings);
+  const g=$("#ringG");const key=S.ref+"|"+S.rings+"|"+S.mode;const rebuild=key!==RING_KEY;RING_KEY=key;if(rebuild)g.innerHTML="";const r=refPt();const [x,y]=P(r.lng,r.lat);
+  const el0=el;{const el=(...a)=>rebuild?el0(...a):null;
+  const W=S.mode!=="drive",DR=S.mode==="drive"?[5,10,20]:S.mode==="both"?[20]:[];
+  labelsEl.querySelectorAll("[data-ring]").forEach(d=>{const r=d.dataset.ring,isD=r==="drive"||r[0]==="d";d.hidden=!S.rings||(isD?!DR.includes(r==="drive"?20:+r.slice(1)):!W)});
   if(!S.rings)return;
-  if(S.ref==="edge"){const d=path(G.campus)+"Z";let top=1e9;for(const p of G.campus){const [,py]=P(p[0],p[1]);top=Math.min(top,py)}
+  if(!W){}else if(S.ref==="edge"){const d=path(G.campus)+"Z";let top=1e9;for(const p of G.campus){const [,py]=P(p[0],p[1]);top=Math.min(top,py)}
     const cx=P(-97.7340,30.29)[0];
     for(const m of [30,20,10]){const rad=(m/20/1.25)*MILE_PX;el("path",{d,fill:"var(--accent)","fill-opacity":.025,stroke:"var(--accent)","stroke-opacity":.045,"stroke-width":rad*2,"stroke-linejoin":"round"},g);
-      const lb=labelsEl.querySelector(`[data-ring="${m}"]`);const w=lb.offsetWidth,h=lb.offsetHeight;lb.style.transform=`translate(${sx(cx)-w/2}px,${sy(top-rad)-h/2}px)`}
+      const lb=labelsEl.querySelector(`[data-ring="${m}"]`);const [w,h]=lsz(lb);lb.style.transform=`translate(${sx(cx)-w/2}px,${sy(top-rad)-h/2}px)`}
     el("path",{d,fill:"none",stroke:"var(--accent)","stroke-width":1.5,"stroke-dasharray":"6 6","vector-effect":"non-scaling-stroke",opacity:.6},g);
   }else
   for(const m of [10,20,30]){const rad=(m/20/1.25)*MILE_PX;
     el("circle",{cx:x,cy:y,r:rad,class:"ringfill"},g);el("circle",{cx:x,cy:y,r:rad,class:"ring"},g);
-    const d=labelsEl.querySelector(`[data-ring="${m}"]`);const w=d.offsetWidth,h=d.offsetHeight;
+    const d=labelsEl.querySelector(`[data-ring="${m}"]`);const [w,h]=lsz(d);
     d.style.transform=`translate(${sx(x)-w/2}px,${sy(y-rad)-h/2}px)`}
-  {const rad=((20-3)/2.2/1.25)*MILE_PX;el("circle",{cx:x,cy:y,r:rad,class:"ring drive"},g);
-   const d=labelsEl.querySelector('[data-ring="drive"]');const w=d.offsetWidth,h=d.offsetHeight;d.style.transform=`translate(${sx(x)-w/2}px,${sy(y-rad)-h/2}px)`}
-}
+  for(const m of DR){const rad=((m-3)/2.2/1.25)*MILE_PX;el("circle",{cx:x,cy:y,r:rad,class:"ring drive"},g);
+   const d=labelsEl.querySelector(m===20?'[data-ring="drive"]':`[data-ring="d${m}"]`);const [w,h]=lsz(d);d.style.transform=`translate(${sx(x)-w/2}px,${sy(y-rad)-h/2}px)`}
+}}
 function updateScale(){const target=[.1,.25,.5,1,2,5];const pxPerMi=MILE_PX*V.s;let mi=target.find(t=>t*pxPerMi>=60)||5;$("#scaleBar").style.width=(mi*pxPerMi).toFixed(0)+"px";$("#scaleTxt").textContent=mi<1?mi+" mi":mi+" mi"}
 
 /* ---------- Pins ---------- */
@@ -487,7 +498,7 @@ function buildPins(){
     b.setAttribute("aria-label",`${a.name}, ${ownTxt(a)}, about ${dist(a).walk} minute walk`);
     const [c1]=a.kind==="dorm"?["#7c3aed"]:a.kind==="house"?["#0e7490"]:hc(a.neighborhood);
     b.innerHTML=`<div class="bub"><span class="dot" style="background:${c1}">${a.kind==="dorm"?'<svg width="10" height="10" viewBox="0 0 24 24" fill="#fff"><path d="M3 21V9l9-6 9 6v12h-7v-5h-4v5zM8 11h2v2H8zm6 0h2v2h-2z"/></svg>':a.kind==="house"?'<svg width="10" height="10" viewBox="0 0 24 24" fill="#fff"><path d="M3 11 12 3l9 8h-3v10h-5v-6h-2v6H6V11z"/></svg>':a.pool?'<svg width="11" height="11" viewBox="0 0 24 24" fill="#fff"><path d="M2 17c2 0 2-1.5 4-1.5S8 17 10 17s2-1.5 4-1.5 2 1.5 4 1.5 2-1.5 4-1.5V19c-2 0-2 1.5-4 1.5s-2-1.5-4-1.5-2 1.5-4 1.5-2-1.5-4-1.5-2 1.5-4 1.5zM7 4h2v9H7zm8 0h2v9h-2zM9 7h6v2H9z"/></svg>':'<svg width="10" height="10" viewBox="0 0 24 24" fill="#fff"><path d="M4 21V8l8-5 8 5v13h-6v-6h-4v6z"/></svg>'}</span><span class="pr">${PR(a)!=null?money(PR(a)):"Price?"}</span>${hearts.has(a.id)?'<span class="h">'+HEART+'</span>':""}</div><div class="tail"></div>`;
-    b.addEventListener("click",ev=>{ev.stopPropagation();openCard(a.id,true)});
+    b.addEventListener("click",ev=>{ev.stopPropagation();if(moved)return;openCard(a.id,true)});
     b.addEventListener("pointerenter",()=>{hoverId=a.id;placePins();showTip(a.id)});
     b.addEventListener("pointerleave",()=>{hoverId=null;tip.hidden=true});
     b.addEventListener("focus",()=>{hoverId=a.id;showTip(a.id)});b.addEventListener("blur",()=>{hoverId=null;tip.hidden=true});
@@ -499,7 +510,7 @@ function placePins(){
   const z=V.s;
   const W=mapEl.clientWidth,H=mapEl.clientHeight;
   const items=[];for(const a of shown){const [x,y]=P(a.lng,a.lat);const X=sx(x),Y=sy(y);const b=pinEls.get(a.id);if(!b)continue;
-    if(X<-80||X>W+80||Y<-40||Y>H+60){b.style.display="none";continue}b.style.display="";items.push({a,x:X,y:Y})}
+    if(X<-300||X>W+300||Y<-300||Y>H+300){b.style.display="none";continue}b.style.display="";items.push({a,x:X,y:Y})}
   // priority: selected, hovered, saved, then closest walk
   const pri=it=>(it.a.id===selected?0:it.a.id===hoverId?1:hearts.has(it.a.id)?2:3)*1000+dist(it.a).walk;
   const order=[...items].sort((p,q)=>pri(p)-pri(q));const boxes=[];
@@ -514,7 +525,7 @@ function placePins(){
 }
 function showTip(id){const a=APTS.find(x=>x.id===id);if(!a)return;const b=pinEls.get(id);if(!b){tip.hidden=true;return}
   const d=dist(a);const r=b.getBoundingClientRect(),m=mapEl.getBoundingClientRect();
-  tip.innerHTML=`<b>${esc(a.name)}</b>${a.rating!=null?ratingHtml(a)+"<br>":""}<span>${ownTxt(a)} · ${d.walk} min walk</span><br><span>${esc([a.pool?"Pool":null,a.windowsEveryBedroom?"Windows in every bedroom":null,balcKind(a)?BALC_LABEL[balcKind(a)]:null,a.tagSet.has("gym")?"Gym":null].filter(Boolean).join(" · ")||a.neighborhood)}</span>`;
+  tip.innerHTML=`<b>${esc(a.name)}</b>${a.rating!=null?ratingHtml(a)+"<br>":""}<span>${ownTxt(a)} · ${tt(d)}</span><br><span>${esc([a.pool?"Pool":null,a.windowsEveryBedroom?"Windows in every bedroom":null,balcKind(a)?BALC_LABEL[balcKind(a)]:null,a.tagSet.has("gym")?"Gym":null].filter(Boolean).join(" · ")||a.neighborhood)}</span>`;
   tip.hidden=false;let x=r.left-m.left+r.width/2-tip.offsetWidth/2,y=r.top-m.top-tip.offsetHeight-8;x=Math.max(8,Math.min(m.width-tip.offsetWidth-8,x));if(y<8)y=r.bottom-m.top+8;tip.style.left=x+"px";tip.style.top=y+"px"}
 mapEl.addEventListener("click",e=>{if(moved||e.target.closest(".pin"))return;if(selected){closeCard()}});
 
@@ -546,7 +557,7 @@ function renderList(){
   if(!arr.length){ul.innerHTML=tab==="saved"?`<li class="empty"><b>No saved apartments yet</b>Tap the heart on any place to save it here. Your hearts show up on the map too.</li>`:`<li class="empty"><b>No places match</b>Try a longer walk, a higher price, or remove a filter.</li>`;return}
   ul.innerHTML=arr.map(a=>{const d=dist(a);const tags=[a.tagSet.has("pool")&&"Pool",balcKind(a)&&BALC_LABEL[balcKind(a)],a.tagSet.has("gym")&&"Gym",a.windowsEveryBedroom&&"Windows",a.privateBath===true&&"Own bath",(a.tagSet.has("hot_tub")||a.tagSet.has("sauna"))&&"Hot tub/sauna",(a.tagSet.has("game_room")||a.tagSet.has("pool_table"))&&"Game room"].filter(Boolean).slice(0,4);
    const rec=tab==="for"&&recCache?recCache.find(r=>r.a.id===a.id):null;const why=rec&&rec.because?whyLike(a,rec.because):[];
-   return `<li class="res${a.id===selected?" sel":""}" data-id="${a.id}" tabindex="0" role="button" aria-label="${esc(a.name)}">${thumb(a)}<div class="rt"><b>${esc(a.name)}</b>${rec&&rec.because?`<span class="why">Like ${esc(rec.because.name)}${why.length?": "+esc(why.join(", ")):""}</span>`:""}<span>${a.rating!=null?ratingHtml(a)+" · ":""}${a.kind==="dorm"?"Dorm · ":a.kind==="house"?"House · ":""}${esc(a.neighborhood)} · ${d.walk} min walk · ${d.mi.toFixed(1)} mi</span><div class="tags">${tags.map(t=>`<span class="tag ok">${t}</span>`).join("")}</div></div>
+   return `<li class="res${a.id===selected?" sel":""}" data-id="${a.id}" tabindex="0" role="button" aria-label="${esc(a.name)}">${thumb(a)}<div class="rt"><b>${esc(a.name)}</b>${rec&&rec.because?`<span class="why">Like ${esc(rec.because.name)}${why.length?": "+esc(why.join(", ")):""}</span>`:""}<span>${a.rating!=null?ratingHtml(a)+" · ":""}${a.kind==="dorm"?"Dorm · ":a.kind==="house"?"House · ":""}${esc(a.neighborhood)} · ${tt(d)} · ${d.mi.toFixed(1)} mi</span><div class="tags">${tags.map(t=>`<span class="tag ok">${t}</span>`).join("")}</div></div>
    <div class="rp"><b>${PR(a)!=null?money(PR(a)):"—"}</b><span>${PR(a)!=null?(PR(a)===a.shared?"/mo shared room":a.kind==="house"?"/mo each":a.perApt?"/mo whole apt":"/mo"):"not listed"}</span><button class="icon-btn${hearts.has(a.id)?" on":""}" data-heart="${a.id}" aria-label="${hearts.has(a.id)?"Remove from saved":"Save"} ${esc(a.name)}" aria-pressed="${hearts.has(a.id)}">${hearts.has(a.id)?HEART.replace('width="11" height="11"','width="18" height="18"'):'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.1 0 3.6 1.1 4.3 2.4h2c.7-1.3 2.2-2.4 4.3-2.4 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21z"/></svg>'}</button></div></li>`}).join("");
 }
 $("#list").addEventListener("click",e=>{const h=e.target.closest("[data-heart]");if(h){e.stopPropagation();toggleHeart(h.dataset.heart);return}const li=e.target.closest(".res");if(li)openCard(li.dataset.id,false)});
@@ -577,6 +588,7 @@ function renderCard(){
     <h2>${esc(a.name)}</h2></div>
   ${gal}
   <div class="cbody">
+    ${a.addedByAI?`<div class="aibadge">✨ Added with AI${a.addedAt?" on "+new Date(a.addedAt).toLocaleDateString():""}. Double-check details on the official site.</div>`:""}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:-2px">${ratingHtml(a,true)}${a.ratingUrl?`<a class="linkbtn" style="font-size:12.5px;text-decoration:none" href="${esc(a.ratingUrl)}" target="_blank" rel="noopener">Read reviews</a>`:""}</div>
     <div class="sub">${a.kind==="dorm"?"Dorm · ":a.kind==="house"?"House for rent · ":""}${esc(a.neighborhood)} · ${esc(a.address)}</div>
     <div class="actions" style="grid-template-columns:repeat(4,1fr)">
@@ -606,7 +618,7 @@ function renderCard(){
     
     ${allAmen(a)}
     ${a.notes?`<div class="callout">${esc(a.notes)}</div>`:""}
-    <div class="sec"><h4>Similar places</h4><div class="simrow">${similarTo(a,6).map(({c})=>`<button class="simc" data-sim="${c.id}"><b>${esc(c.name)}</b><span>${c.priceMin!=null?money(c.priceMin)+(c.perApt?" /apt":""):"Price not listed"} · ${dist(c).walk} min walk</span></button>`).join("")}</div></div>
+    <div class="sec"><h4>Similar places</h4><div class="simrow">${similarTo(a,6).map(({c})=>`<button class="simc" data-sim="${c.id}"><b>${esc(c.name)}</b><span>${c.priceMin!=null?money(c.priceMin)+(c.perApt?" /apt":""):"Price not listed"} · ${tt(dist(c))}</span></button>`).join("")}</div></div>
     <div class="sec src"><h4>Where this info came from</h4>${(a.sources||[]).map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u.replace(/^https?:\/\/(www\.)?/,"").slice(0,70))}</a>`).join("")}
       <div class="note">${a.coordsEstimated?"Map pin placed from the street address. ":""}Info gathered ${esc(CHECKED)}. Prices and availability change, so confirm with the property before signing.</div></div>
   </div>`;
@@ -669,6 +681,7 @@ $("#sort").onchange=e=>{S.sort=e.target.value;saveFilters();renderList()};
 function toggleFilters(open){filtersOpen=open??!filtersOpen;$("#filters").hidden=!filtersOpen;$("#fToggle").setAttribute("aria-expanded",filtersOpen);if(filtersOpen){if(selected)closeCard();$("#scroll").scrollTop=0;if(innerWidth<=720)$("#panel").classList.remove("min")}}
 $("#fToggle").onclick=()=>toggleFilters();
 $("#ref").innerHTML=REFS.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("");
+if($("#mode")){$("#mode").value=S.mode||"walk";$("#mode").onchange=e=>{S.mode=e.target.value;saveFilters();renderList();buildPins();placeRings();if(selected)renderCard()}}
 $("#ref").onchange=e=>{S.ref=e.target.value;saveFilters();renderList();buildPins();placeLabels();placeRings();if(selected)renderCard()};
 $("#q").oninput=e=>{query=e.target.value.trim();renderList();buildPins()};
 function setTab(t){tab=t;$("#tabAll").setAttribute("aria-pressed",t==="all");$("#tabSaved").setAttribute("aria-pressed",t==="saved");$("#tabFor").setAttribute("aria-pressed",t==="for");$("#fToggle").hidden=t==="saved";if(t==="saved")toggleFilters(false);if(selected)closeCard();renderList();buildPins()}

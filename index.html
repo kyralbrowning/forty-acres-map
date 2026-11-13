@@ -134,8 +134,8 @@ body{background:var(--land);color:var(--fg);font-family:var(--font);font-size:14
 .seg button{border:0;background:transparent;color:var(--fg);font:inherit;font-weight:600;font-size:13px;padding:6px;border-radius:7px;cursor:pointer;display:flex;gap:6px;align-items:center;justify-content:center}
 .seg button[aria-pressed="true"]{background:var(--glass-solid);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .seg .count{font-variant-numeric:tabular-nums;color:var(--fg2);font-weight:500}
-.row{display:flex;gap:8px;align-items:center}
-.row label{font-size:12px;color:var(--fg2)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row #ref{flex:1 1 50%}.row .fbtn{flex:1 1 40%;justify-content:center;padding:8px 10px}
+.row label{font-size:12px;color:var(--fg2)}.modesel{flex:none;max-width:none}
 select{font:inherit;font-size:13px;color:var(--fg);background:var(--chip);border:0;border-radius:8px;padding:6px 8px;min-width:0;flex:1}
 .fbtn{border:0;background:var(--chip);color:var(--fg);font:inherit;font-size:13px;font-weight:600;border-radius:8px;padding:6px 10px;cursor:pointer;display:flex;gap:6px;align-items:center;white-space:nowrap}
 .fbtn .n{background:var(--accent);color:#fff;border-radius:9px;padding:0 6px;font-size:11px;font-variant-numeric:tabular-nums}
@@ -293,11 +293,12 @@ input[type=range]{width:100%;accent-color:var(--accent)}
         <button id="tabFor" aria-pressed="false"><svg width="13" height="13" viewBox="0 0 24 24" fill="#ff9f0a"><path d="M12 2l2.6 6.3L21 9l-5 4.4L17.5 20 12 16.6 6.5 20 8 13.4 3 9l6.4-.7z"/></svg>For you</button>
       </div>
       <div class="row">
-        <label for="ref">Walk to</label>
+        <select id="mode" class="modesel" aria-label="Walk or drive"><option value="walk">Walk to</option><option value="drive">Drive to</option><option value="both">Walk + drive to</option></select>
         <select id="ref"></select>
         <button class="fbtn" id="fToggle" aria-expanded="false" aria-controls="filters">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg>Filters <span class="n" id="fCount" hidden>0</span>
         </button>
+        <button class="fbtn aibtn" id="aiOpen" type="button" hidden>✨ Ask AI</button>
       </div>
     </div>
     <div class="scroll" id="scroll">
@@ -319,7 +320,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
       </div>
       <div id="listView">
         <div class="meta"><span id="metaTxt"></span>
-          <select id="sort" aria-label="Sort results"><option value="walk">Closest walk</option><option value="price">Lowest price</option><option value="name">Name</option><option value="hood">Neighborhood</option><option value="rating">Highest rated</option></select>
+          <select id="sort" aria-label="Sort results"><option value="walk">Closest</option><option value="price">Lowest price</option><option value="name">Name</option><option value="hood">Neighborhood</option><option value="rating">Highest rated</option></select>
         </div>
         <ul id="list"></ul>
       </div>
@@ -433,6 +434,15 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
 
 
 <script>
+/* A click only counts as a tap: if the finger moved (scroll, pan, drag), ignore the click that follows. */
+(function(){let sx=0,sy=0,far=false;
+  addEventListener("pointerdown",e=>{sx=e.clientX;sy=e.clientY;far=false},true);
+  addEventListener("pointermove",e=>{if(!far&&Math.hypot(e.clientX-sx,e.clientY-sy)>(e.pointerType==="mouse"?6:10))far=true},true);
+  addEventListener("click",e=>{if(far&&e.isTrusted&&e.detail!==0){e.stopPropagation();e.preventDefault();far=false}},true);
+  addEventListener("scroll",()=>{far=true},true);
+})();
+</script>
+<script>
 /* Phone bottom sheet: drag the handle or the header to peek / half / full. */
 (function(){const mq=matchMedia("(max-width:720px)");if(!mq.matches)return;window.FAH_SHEET=true;
   const P=document.getElementById("panel"),G=document.getElementById("grab");let state="peek",obs;
@@ -503,6 +513,22 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
 #gForm[hidden],.glinks[hidden],.gpw[hidden]{display:none}
 .gpw{position:relative;display:flex}.gpw input{flex:1;min-width:0;padding-right:44px!important}
 #gEye{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;color:#7a6f66;cursor:pointer;padding:6px;display:grid;place-items:center;border-radius:8px}#gEye:hover{color:#bf5700}#gEye.on .eslash{display:none}
+.aibtn{background:linear-gradient(135deg,#bf5700,#e07b2c)!important;color:#fff!important}
+.aibadge{font-size:12.5px;background:#fff4e8;color:#8a4a12;border-radius:10px;padding:7px 10px;line-height:1.35}
+@media (prefers-color-scheme:dark){.aibadge{background:#3a2a1c;color:#f3c99b}}
+#ai{position:fixed;inset:0;z-index:5400;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:16px;font-family:var(--font,-apple-system,BlinkMacSystemFont,sans-serif)}#ai[hidden]{display:none}
+#ai .box{background:var(--glass-solid,#fff);color:var(--fg,#2b2522);border-radius:18px;width:100%;max-width:480px;height:min(640px,86vh);display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden}
+#ai .hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:.5px solid var(--hair,#eee)}#ai .hd b{font-size:16px}#ai .hd button{border:0;background:none;font-size:18px;cursor:pointer;color:inherit;padding:4px 6px}
+#ai .tabs{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:10px 14px 0;background:var(--chip,#f1ede9);border-radius:9px;padding:2px}#ai .tabs button{border:0;background:transparent;color:inherit;font:inherit;font-weight:600;font-size:13px;padding:7px;border-radius:7px;cursor:pointer}#ai .tabs button[aria-pressed=true]{background:var(--glass-solid,#fff);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+#ai .msgs{flex:1;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px;overscroll-behavior:contain}
+#ai .m{max-width:88%;padding:9px 12px;border-radius:14px;font-size:14px;line-height:1.45;white-space:normal;word-wrap:break-word}#ai .m.me{align-self:flex-end;background:#bf5700;color:#fff;border-bottom-right-radius:4px}#ai .m.bot{align-self:flex-start;background:var(--chip,#f1ede9);border-bottom-left-radius:4px}#ai .m.err{background:#fde8e6;color:#9b2c20}
+#ai .m ul{margin:4px 0;padding-left:18px}#ai .m p{margin:0 0 6px}#ai .m p:last-child{margin:0}
+#ai .sugg{display:flex;flex-wrap:wrap;gap:6px}#ai .sugg button{border:1px solid var(--hair,#ddd);background:transparent;color:inherit;font:inherit;font-size:12.5px;border-radius:999px;padding:6px 10px;cursor:pointer}
+#ai form{display:flex;gap:8px;padding:10px 14px calc(12px + env(safe-area-inset-bottom,0px));border-top:.5px solid var(--hair,#eee);flex-wrap:wrap}
+#ai form input{flex:1;min-width:0;font:inherit;font-size:16px;padding:10px 12px;border-radius:11px;border:1px solid var(--hair,#ddd2c7);background:transparent;color:inherit;outline:none}#ai form input:focus{border-color:#bf5700}
+#ai form button{font:inherit;font-size:15px;font-weight:650;padding:10px 14px;border:0;border-radius:11px;background:#bf5700;color:#fff;cursor:pointer}#ai form button:disabled{opacity:.6}
+#ai .full{flex-basis:100%}#ai .hint{font-size:12px;color:var(--fg2,#7a6f66);padding:0 2px;flex-basis:100%}
+@media (max-width:720px){#ai{padding:0;align-items:flex-end}#ai .box{max-width:none;height:92vh;border-radius:18px 18px 0 0}}
 #acct .sep{font-style:normal}#acct{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;font-size:11.5px;color:var(--fg2);margin-top:6px;line-height:1.3}#acct button{border:0;background:none;color:var(--accent);font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;padding:0}
 </style>
 <script>
@@ -550,4 +576,42 @@ async function fill(){const p=$g("appr");p.innerHTML='<div class="abox"><div cla
 })();
 </script>
 
+<div id="ai" hidden><div class="box" role="dialog" aria-label="Ask AI">
+  <div class="hd"><b>✨ Ask AI</b><button type="button" id="aiX" aria-label="Close">✕</button></div>
+  <div class="tabs"><button type="button" id="aiTAsk" aria-pressed="true">Ask about places</button><button type="button" id="aiTAdd" aria-pressed="false">Add a missing place</button></div>
+  <div class="msgs" id="aiMsgs"></div>
+  <form id="aiForm" autocomplete="off">
+    <input id="aiQ" maxlength="600" placeholder="Ask anything about the places">
+    <input id="aiWeb" class="full" type="url" placeholder="Website link (optional, helps me find it)" hidden>
+    <button type="submit" id="aiGo">Send</button>
+    <div class="hint" id="aiHint">Answers come from the map's info. Double-check prices on the official site.</div>
+  </form>
+</div></div>
+<script>
+(function(){const A=window.FAH_AUTH,$a=id=>document.getElementById(id);let mode="ask",hist=[],busy=false;
+const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+function md(t){const lines=esc(t).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").split(/\n/);let h="",ul=false;
+  for(const l of lines){const m=/^\s*[-*•]\s+(.*)/.exec(l);if(m){if(!ul){h+="<ul>";ul=true}h+="<li>"+m[1]+"</li>"}else{if(ul){h+="</ul>";ul=false}if(l.trim())h+="<p>"+l+"</p>"}}return h+(ul?"</ul>":"")}
+function add(cls,html){const d=document.createElement("div");d.className="m "+cls;d.innerHTML=html;$a("aiMsgs").appendChild(d);$a("aiMsgs").scrollTop=1e9;return d}
+function intro(){$a("aiMsgs").innerHTML="";if(mode==="ask"){add("bot",md("Hi! Ask me to compare places or answer questions about them. I know your saved places too."));
+    const s=document.createElement("div");s.className="sugg";["Compare my saved places","Which have a pool and my own bathroom under $1,200?","Closest places with a balcony","What's the cheapest 4x4 in West Campus?"].forEach(t=>{const b=document.createElement("button");b.type="button";b.textContent=t;b.onclick=()=>{$a("aiQ").value=t;$a("aiForm").requestSubmit()};s.appendChild(b)});$a("aiMsgs").appendChild(s)}
+  else add("bot",md("Type the name of a place that isn't on the map. I'll check that it's real, look up its info, and add it if it's within the map's area (about a 20-minute drive from campus)."))}
+function setMode(m){mode=m;$a("aiTAsk").setAttribute("aria-pressed",m==="ask");$a("aiTAdd").setAttribute("aria-pressed",m==="add");$a("aiWeb").hidden=m!=="add";
+  $a("aiQ").placeholder=m==="ask"?"Ask anything about the places":"Name of the place, e.g. \"The Castilian\"";$a("aiGo").textContent=m==="ask"?"Send":"Find & add";
+  $a("aiHint").textContent=m==="ask"?"Answers come from the map's info. Double-check prices on the official site.":"Places added with AI are marked so people know to double-check them.";intro()}
+async function call(body){const r=await A.sb.functions.invoke("ai",{body});if(r.error){let m="Something went wrong. Try again.";try{const j=await r.error.context.json();if(j&&j.error)m=j.error}catch(e){}throw new Error(m)}return r.data}
+$a("aiForm").onsubmit=async e=>{e.preventDefault();if(busy)return;const q=$a("aiQ").value.trim();if(!q)return;busy=true;$a("aiGo").disabled=true;
+  const sg=$a("aiMsgs").querySelector(".sugg");if(sg)sg.remove();add("me",esc(q));$a("aiQ").value="";const w=add("bot","<i>"+(mode==="ask"?"Thinking…":"Looking it up… this can take 20–30 seconds.")+"</i>");
+  try{if(mode==="ask"){const r=await call({action:"ask",question:q,history:hist.slice()});w.innerHTML=md(r.answer||"");hist.push({role:"user",text:q},{role:"ai",text:r.answer||""});hist=hist.slice(-8)}
+    else{const web=$a("aiWeb").value.trim();const r=await call({action:"add",query:q,website:web||undefined});w.innerHTML=md(r.message||"");if(r.ok){$a("aiWeb").value="";const b=document.createElement("button");b.type="button";b.textContent="Show it on the map";b.style.cssText="margin-top:8px;border:0;border-radius:9px;background:#bf5700;color:#fff;font:inherit;font-weight:600;padding:7px 12px;cursor:pointer";b.onclick=()=>{try{localStorage.setItem("fah.openAfter",r.id)}catch(x){}location.reload()};w.appendChild(b)}
+      else if(r.needWebsite){$a("aiWeb").focus()}}}
+  catch(x){w.className="m bot err";w.textContent=x.message}finally{busy=false;$a("aiGo").disabled=false}};
+$a("aiTAsk").onclick=()=>setMode("ask");$a("aiTAdd").onclick=()=>setMode("add");
+$a("aiX").onclick=()=>{$a("ai").hidden=true};$a("ai").addEventListener("click",e=>{if(e.target.id==="ai")$a("ai").hidden=true});
+A.status.then(st=>{if(st!=="approved")return;const b=$a("aiOpen");b.hidden=false;b.onclick=()=>{$a("ai").hidden=false;if(!$a("aiMsgs").children.length)setMode("ask");setTimeout(()=>$a("aiQ").focus(),50)}});
+// open a newly added place after reload
+addEventListener("load",()=>{let id=null;try{id=localStorage.getItem("fah.openAfter");localStorage.removeItem("fah.openAfter")}catch(x){}if(!id)return;
+  const t=setInterval(()=>{const li=document.querySelector(`.res[data-id="${CSS.escape(id)}"]`);if(li){clearInterval(t);li.click()}},400);setTimeout(()=>clearInterval(t),15000)});
+})();
+</script>
 </body></html>
