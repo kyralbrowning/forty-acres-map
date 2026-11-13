@@ -287,6 +287,7 @@ async function add(db: any, user: any, query: string, website: string | null, ad
   };
   if (data.pool) data.tags.push("pool");
   if (data.privateBath === "all") data.tags.push("private_bathrooms");
+  if (data.parkingPerMonth != null) data.tags.push("garage_parking");
   const { data: mx } = await db.from("places").select("ord").order("ord", { ascending: false, nullsFirst: false }).limit(1);
   const ord = ((mx?.[0]?.ord) || places.length) + 1;
   const { error } = await db.from("places").insert({ id, data, ord });
