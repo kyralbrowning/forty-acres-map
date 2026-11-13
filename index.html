@@ -126,7 +126,7 @@ body{background:var(--land);color:var(--fg);font-family:var(--font);font-size:14
 .brand{display:flex;align-items:center;gap:10px}
 .brand .logo{width:30px;height:30px;border-radius:8px;background:var(--campus-ink);display:grid;place-items:center;color:#fff;flex:none}
 .brand h1{margin:0;font-family:var(--font-display);font-size:17px;font-weight:700;letter-spacing:-.01em;line-height:1.1}
-.brand p{margin:0;color:var(--fg2);font-size:11.5px}
+.brand p{margin:4px 0 0;color:var(--fg2);font-size:11.5px;line-height:1.3}
 .search{display:flex;align-items:center;gap:8px;background:var(--chip);border-radius:10px;padding:0 10px;height:36px}
 .search svg{flex:none;color:var(--fg3)}
 .search input{flex:1;min-width:0;border:0;background:transparent;color:var(--fg);font:inherit;font-size:15px;outline:none}
@@ -428,7 +428,7 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
     <p class="gsub" id="gSub">Sign in to see the map, your saves and shared folders.</p>
     <form id="gForm" autocomplete="on">
       <input id="gEmail" type="email" placeholder="Email" autocomplete="email" required>
-      <input id="gPass" type="password" placeholder="Password (8+ characters)" autocomplete="current-password" minlength="8">
+      <div class="gpw" id="gPw"><input id="gPass" type="password" placeholder="Password (8+ characters)" autocomplete="current-password" minlength="8"><button type="button" id="gEye" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><line class="eslash" x1="3" y1="3" x2="21" y2="21"/></svg></button></div>
       <input id="gNote" type="text" maxlength="50" placeholder="Message for the owner (optional)" autocomplete="off" hidden>
       <div class="gcount" id="gCount" hidden>0/50</div>
       <button type="submit" id="gGo">Sign in</button>
@@ -462,19 +462,22 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
 @media (prefers-color-scheme:dark){.abox,.abtns button{background:#26221f;color:#f3ede6}.abtns button{border-color:#4a423b}.ahead,.arow{border-color:#3a332d}}
 .gcount{font-size:11.5px;color:#9a8f86;text-align:right;margin-top:-6px}.gcount[hidden]{display:none}
 .gwait{display:flex;flex-direction:column;gap:8px;align-items:center}.gwait[hidden]{display:none}#gAgain{font:inherit;font-size:15px;font-weight:650;padding:11px;border:0;border-radius:11px;background:#bf5700;color:#fff;cursor:pointer;width:100%}#gAgain[hidden]{display:none}
-#gForm[hidden],.glinks[hidden]{display:none}
-#acct{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--fg2);margin-top:2px}#acct button{border:0;background:none;color:var(--accent);font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;padding:0}
+#gForm[hidden],.glinks[hidden],.gpw[hidden]{display:none}
+.gpw{position:relative;display:flex}.gpw input{flex:1;min-width:0;padding-right:44px!important}
+#gEye{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;color:#7a6f66;cursor:pointer;padding:6px;display:grid;place-items:center;border-radius:8px}#gEye:hover{color:#bf5700}#gEye.on .eslash{display:none}
+#acct{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;font-size:11.5px;color:var(--fg2);margin-top:6px;line-height:1.3}#acct button{border:0;background:none;color:var(--accent);font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;padding:0}
 </style>
 <script>
 (function(){
 const A=window.FAH_AUTH,g=document.getElementById("gate"),$g=id=>document.getElementById(id);let mode="in";
 function show(m){mode=m;g.hidden=false;const map={in:["Sign in to see the map, your saves and shared folders.","Sign in","New here? Create an account"],up:["Make an account. The site owner approves new accounts before they can see the map.","Continue","Have an account? Sign in"],reset:["Enter your email and we'll send a reset link.","Send reset link","Back to sign in"],newpw:["Choose a new password.","Save password",""]}[m];
   $g("gSub").textContent=map[0];$g("gGo").textContent=map[1];$g("gSwap").textContent=map[2];$g("gSwap").hidden=!map[2];$g("gForgot").hidden=m!=="in";
-  $g("gPass").hidden=m==="reset";$g("gNote").hidden=m!=="up";$g("gCount").hidden=m!=="up";$g("gForm").hidden=false;$g("gWait").hidden=true;$g("glinks").hidden=false;$g("gEmail").hidden=m==="newpw";$g("gPass").autocomplete=m==="in"?"current-password":"new-password";$g("gMsg").textContent="";$g("gMsg").className="gmsg";
+  $g("gPw").hidden=m==="reset";$g("gNote").hidden=m!=="up";$g("gCount").hidden=m!=="up";$g("gForm").hidden=false;$g("gWait").hidden=true;$g("glinks").hidden=false;$g("gEmail").hidden=m==="newpw";$g("gPass").autocomplete=m==="in"?"current-password":"new-password";$g("gMsg").textContent="";$g("gMsg").className="gmsg";
   if(/^#folder-/.test(location.hash)&&m==="in")$g("gSub").textContent="Someone shared a folder with you. Sign in or make an account to open it."}
 function wait(denied){g.hidden=false;$g("gForm").hidden=true;$g("glinks").hidden=true;$g("gWait").hidden=false;$g("gMsg").textContent="";
   $g("gSub").textContent=denied?"This account wasn't approved, so it can't open the map.":"Your account needs to be approved before you can see the map. Check back soon.";$g("gAgain").hidden=!!denied}
 $g("gAgain").onclick=()=>location.reload();$g("gOut").onclick=()=>A.signOut();
+$g("gEye").onclick=()=>{const i=$g("gPass"),show=i.type==="password";i.type=show?"text":"password";const b=$g("gEye");b.classList.toggle("on",show);b.setAttribute("aria-pressed",show);b.setAttribute("aria-label",show?"Hide password":"Show password")};
 $g("gNote").oninput=()=>{$g("gCount").textContent=$g("gNote").value.length+"/50"};
 function msg(t,ok){$g("gMsg").textContent=t;$g("gMsg").className="gmsg "+(ok?"ok":"err")}
 $g("gSwap").onclick=()=>show(mode==="in"?"up":"in");$g("gForgot").onclick=()=>show("reset");
