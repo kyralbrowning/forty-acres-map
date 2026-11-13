@@ -872,8 +872,8 @@ function openCompare(f,again){if(!again){try{const root=folders[f]&&folders[f].p
   if(pr.some(p=>p.minRating))rows.push(["Rating",p=>p.minRating?p.minRating+"+ ★":no]);
   const am=avgMax(f);const unset=P.filter(p=>!p.prefs).map(p=>p.name);
   d.innerHTML=`<div class="cbox" role="dialog" aria-label="Everyone's preferences"><div class="chd"><div><b>Everyone's preferences</b><span>${esc(folderTitle(f))}</span></div><button type="button" id="cX" aria-label="Close">✕</button></div>
-    ${am?`<div class="csum">Average max price: <b>${money(am)}</b>. Places over this go in <b>Maybe delete</b>.</div>`:""}
-    <div class="ctable"><table><thead><tr><th></th>${ppl.map(n=>`<th>${esc(n)}</th>`).join("")}</tr></thead><tbody>${rows.map(([l,fn])=>`<tr><th>${esc(l)}</th>${pr.map(p=>`<td>${fn(p)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    ${am?`<div class="csum">Average max price: <b>${money(am)}</b>. Places that don't match someone's preferences go in <b>Maybe delete</b>.</div>`:""}
+    <div class="ctable"><table><thead><tr><th></th>${ppl.map(n=>`<th>${esc(n)}</th>`).join("")}</tr></thead><tbody>${rows.filter(([l,fn])=>pr.some(p=>fn(p)!==no)).map(([l,fn])=>`<tr><th>${esc(l)}</th>${pr.map(p=>`<td>${fn(p)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
     ${unset.length?`<div class="csum">${esc(unset.join(", "))} ${unset.length===1?"hasn't":"haven't"} set preferences yet.</div>`:""}
     <div class="frow"><button type="button" class="fb pri" id="cMine">Edit my preferences</button></div></div>`;
   d.hidden=false;const close=()=>{d.hidden=true};d.querySelector("#cX").onclick=close;d.onclick=e=>{if(e.target===d)close()};d.querySelector("#cMine").onclick=()=>{close();openPrefScreen(false)}}
