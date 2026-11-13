@@ -104,16 +104,45 @@ Set found=false if you can't confirm this is a real housing place in Austin, TX.
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return out({ error: "POST only" }, 405);
+  const db = createClient(SB_URL, SERVICE, { auth: { persistSession: false } });
+  let body: any = {}; try { body = await req.json(); } catch { /* */ }
+  const SITE = "https://kyralbrowning.github.io/forty-acres-map/";
+  async function sendApproval(email: string) {
+    const { error } = await db.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: SITE } });
+    if (error) console.error("approval email:", error.message);
+    return !error;
+  }
+  // Sign-ups that hit the email limit wait here; the scheduled job finishes them.
+  if (body.action === "queue_signup") {
+    const email = String(body.email || "").trim().toLowerCase();
+    if (!/^[^\s@]{1,80}@[^\s@]{1,80}\.[a-z]{2,}$/i.test(email)) return out({ ok: false }, 400);
+    const row = { email, first_name: String(body.first || "").trim().slice(0, 40) || null, last_name: String(body.last || "").trim().slice(0, 40) || null, note: String(body.note || "").trim().slice(0, 50) || null };
+    const { error } = await db.from("signup_queue").upsert(row, { onConflict: "email" });
+    return out({ ok: !error });
+  }
+  if (body.action === "cron") {
+    const { data: cfg } = await db.from("app_config").select("value").eq("key", "cron_key").maybeSingle();
+    if (!cfg || req.headers.get("x-cron-key") !== cfg.value) return out({ error: "no" }, 401);
+    let approvals = 0, invites = 0;
+    const { data: pend } = await db.from("members").select("user_id,email").eq("approval_email_pending", true).eq("status", "approved").limit(10);
+    for (const m of pend || []) { if (await sendApproval(m.email)) { approvals++; await db.from("members").update({ approval_email_pending: false }).eq("user_id", m.user_id); } else break; }
+    const { data: q } = await db.from("signup_queue").select("*").is("sent_at", null).order("created_at").limit(10);
+    for (const r of q || []) {
+      const { error } = await db.auth.admin.inviteUserByEmail(r.email, { data: { first_name: r.first_name, last_name: r.last_name, note: r.note }, redirectTo: SITE + "?finish=1" });
+      if (!error || /already|registered|exists/i.test(error.message)) { invites++; await db.from("signup_queue").update({ sent_at: new Date().toISOString(), tries: r.tries + 1 }).eq("email", r.email); }
+      else { console.error("invite:", error.message); await db.from("signup_queue").update({ tries: r.tries + 1 }).eq("email", r.email); if (/rate|limit|429/i.test(error.message)) break; }
+    }
+    return out({ approvals, invites });
+  }
   if (!GKEY) return out({ error: "The AI isn't set up yet (missing key)." }, 503);
   const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-  const db = createClient(SB_URL, SERVICE, { auth: { persistSession: false } });
+
   const { data: u } = await db.auth.getUser(jwt);
   if (!u?.user) return out({ error: "Please sign in." }, 401);
   const { data: mem } = await db.from("members").select("status,is_admin").eq("user_id", u.user.id).maybeSingle();
   if (mem?.status !== "approved") return out({ error: "Your account isn't approved yet." }, 403);
   const admin = mem.is_admin === true;
 
-  let body: any = {}; try { body = await req.json(); } catch { /* */ }
   if (body.action === "approve") {
     if (!admin) return out({ error: "Only the owner can approve accounts." }, 403);
     const target = String(body.target || "");
@@ -130,11 +159,6 @@ Deno.serve(async (req) => {
     let sent = 0;
     for (const m of pend || []) { if (await sendApproval(m.email)) { sent++; await db.from("members").update({ approval_email_pending: false }).eq("user_id", m.user_id); } else break; }
     return out({ sent });
-  }
-  async function sendApproval(email: string) {
-    const { error } = await db.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: "https://kyralbrowning.github.io/forty-acres-map/" } });
-    if (error) console.error("approval email:", error.message);
-    return !error;
   }
   if (body.action === "title") {
     const q = String(body.q || "").slice(0, 400), a = String(body.a || "").slice(0, 600);
