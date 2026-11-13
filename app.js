@@ -746,7 +746,7 @@ function folderLink(f){const ids=folderIds(f).filter(id=>APTS.some(a=>a.id===id)
 function newFid(){const a=new Uint8Array(10);crypto.getRandomValues(a);return [...a].map(b=>"abcdefghijklmnopqrstuvwxyz0123456789"[b%36]).join("")}
 function subFolder(f){if(!DB||folderSubs.has(f))return;folderSubs.add(f);
   DB.doc("folders/"+f).onSnapshot(d=>{if(folders[f]&&folders[f].localOnly)return;if(d.exists){const x=d.data()||{};folders[f]={name:String(x.name||"Shared folder").slice(0,40),ids:(Array.isArray(x.ids)?x.ids:[]).filter(i=>typeof i==="string"&&i.length<80).slice(0,300),live:true,
-      private:!!x.private,parent:x.parent||null,kids:Array.isArray(x.kids)?x.kids:[],people:Array.isArray(x.people)?x.people:[],notes:x.notes&&typeof x.notes==="object"?x.notes:{},addedBy:x.addedBy||{},votes:x.votes||{},status:x.status||{},prefsBy:Array.isArray(x.prefsBy)?x.prefsBy:[]};
+      private:!!x.private,parent:x.parent||null,kids:Array.isArray(x.kids)?x.kids:[],people:Array.isArray(x.people)?x.people:[],notes:x.notes&&typeof x.notes==="object"?x.notes:{},addedBy:x.addedBy||{},votes:x.votes||{},status:x.status||{},prefsBy:Array.isArray(x.prefsBy)?x.prefsBy:[],feed:Array.isArray(x.feed)?x.feed:[]};
       for(const k of folders[f].kids){if(!folders[k.code])folders[k.code]={name:k.name,ids:[],parent:f,live:false};else folders[k.code].name=k.name;subFolder(k.code)}}
     else if(folders[f]){folders[f].live=true;writeFolder(f)}
     cacheFolders();renderList();buildPins();if(selected)renderCard()},()=>{})}
@@ -762,11 +762,11 @@ function notesFor(f,id){return ((folders[f]&&folders[f].notes)||{})[id]||[]}
 const NOTE_SVG='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg>';
 function openNote(f,id){const a=APTS.find(x=>x.id===id),x=folders[f];if(!a||!x)return;let d=$("#noteDlg");if(!d){d=document.createElement("div");d.id="noteDlg";document.body.appendChild(d)}
   const ns=notesFor(f,id),mine=ns.find(n=>n.mine),others=ns.filter(n=>!n.mine);
-  d.innerHTML=`<div class="nbox" role="dialog" aria-label="Notes"><div class="nhd"><div><b>${esc(a.name)}</b><span>Notes in ${esc(folderTitle(f))}</span></div><button type="button" id="nX" aria-label="Close">✕</button></div>
+  d.innerHTML=`<div class="nbox" role="dialog" aria-label="Notes"><div class="nhd"><div><b>${esc(a.name)}</b><span>${x.private?"Notes":"Comments"} in ${esc(folderTitle(f))}</span></div><button type="button" id="nX" aria-label="Close">✕</button></div>
     ${others.map(n=>`<div class="nitem"><b>${esc(n.name)}</b><p>${esc(n.text)}</p><span>${new Date(n.at).toLocaleDateString([],{month:"short",day:"numeric"})}</span></div>`).join("")}
-    <label class="nlbl" for="nTxt">${others.length?"Your note":"Note"}${x.private?"":` <span>(everyone in this folder can see it)</span>`}</label>
+    <label class="nlbl" for="nTxt">${x.private?"Note":others.length?"Your comment":"Comment"}${x.private?"":` <span>(everyone in this folder can see it)</span>`}</label>
     <textarea id="nTxt" maxlength="500" rows="4" placeholder="Like: ask about the 4x4 with a balcony, tour Saturday">${esc(mine?mine.text:"")}</textarea>
-    <div class="nbtns"><button type="button" class="fb pri" id="nSave">Save note</button>${mine?'<button type="button" class="fb" id="nDel">Delete my note</button>':""}<span id="nMsg"></span></div></div>`;
+    <div class="nbtns"><button type="button" class="fb pri" id="nSave">${x.private?"Save note":"Post comment"}</button>${mine?`<button type="button" class="fb" id="nDel">Delete my ${x.private?"note":"comment"}</button>`:""}<span id="nMsg"></span></div></div>`;
   d.hidden=false;const close=()=>{d.hidden=true};d.querySelector("#nX").onclick=close;d.onclick=e=>{if(e.target===d)close()};
   const save=async t=>{$("#nMsg").textContent="Saving…";try{await window.FAH_NOTES.set(f,id,t);close()}catch(e){$("#nMsg").textContent="Couldn't save. Try again."}};
   d.querySelector("#nSave").onclick=()=>save($("#nTxt").value);const del=d.querySelector("#nDel");if(del)del.onclick=()=>save("");setTimeout(()=>$("#nTxt").focus(),50)}
@@ -798,6 +798,15 @@ function fGroups(f){const x=folders[f];const ids=folderIds(f).filter(id=>APTS.so
   g.push({k:"toured",l:"Toured",ids:ids.filter(id=>S[id]==="toured")},{k:"applied",l:"Applied",ids:ids.filter(id=>S[id]==="applied")});
   g.push({k:"del",l:"Maybe delete",ids:ids.filter(id=>delReason(f,id))});
   return g}
+let feedOpen=false;
+function feedSeen(f){try{return +localStorage.getItem("fah.feedSeen."+f)||0}catch(e){return 0}}
+function feedLine(e){const a=APTS.find(x=>x.id===e.place),pn=a?a.name:"a place",fl=e.folderName?` in ${e.folderName}`:"";
+  const t={added:`added ${pn}`,removed:`removed ${pn}`,status_toured:`toured ${pn}`,status_applied:`applied to ${pn}`,status_cleared:`unmarked ${pn}`,liked:`liked ${pn} 👍`,disliked:`didn't like ${pn} 👎`,comment:`commented on ${pn}: “${e.detail||""}”`}[e.kind]||`changed ${pn}`;
+  return `${e.name} ${t}`}
+function ago(t){const m=Math.round((Date.now()-new Date(t))/60000);return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":new Date(t).toLocaleDateString([],{month:"short",day:"numeric"})}
+function feedHtml(f){const x=folders[f];const root=x.parent&&folders[x.parent]?x.parent:f;const F=(folders[root].feed||x.feed||[]).filter(e=>!e.mine&&new Date(e.at).getTime()>feedSeen(root));if(!F.length)return"";
+  const show=feedOpen?F.slice(0,20):F.slice(0,3);
+  return `<div class="fupd" role="status"><b>Updates from your roommates</b><ul>${show.map(e=>`<li>${esc(feedLine(e))}<span>${ago(e.at)}</span></li>`).join("")}</ul>${F.length>3?`<button type="button" class="fumore" id="fuMore">${feedOpen?"Show less":`See all ${F.length}`}</button>`:""}<button type="button" class="fux" id="fuX" data-root="${root}" aria-label="Dismiss updates">✕</button></div>`}
 function groupsHtml(f){if(!sharedish(f))return"";const G=fGroups(f);if(!G.some(g=>g.k===foldFilter))foldFilter="all";
   return `<div class="fgroups" role="group" aria-label="Groups">${G.filter(g=>g.k==="all"||g.ids.length||g.k===foldFilter||g.k==="del").map(g=>`<button type="button" class="fgrp${g.k==="del"?" del":""}" data-fgrp="${esc(g.k)}" aria-pressed="${foldFilter===g.k}"><span>${esc(g.l)}</span><b>${g.ids.length}</b></button>`).join("")}</div>
     <div class="frow"><button type="button" class="fb" id="fCompare">Compare everyone's preferences</button></div>`}
@@ -810,8 +819,17 @@ function decorateRows(f){if(!sharedish(f))return;const x=folders[f];document.que
   rt.appendChild(bar)})}
 $("#list").addEventListener("click",async e=>{const b=e.target.closest("[data-vote],[data-stat],[data-fdel]");if(!b||!openFolder)return;e.stopPropagation();e.preventDefault();const f=openFolder,x=folders[f];
   try{if(b.dataset.vote){const id=b.dataset.vid,cur=((x.votes||{})[id]||{}).mine||0,v=+b.dataset.vote;await window.FAH_NOTES.vote(f,id,cur===v?0:v)}
-    else if(b.dataset.stat){const id=b.dataset.stat,cur=(x.status||{})[id]||"";const nx=cur===""?"toured":cur==="toured"?"applied":"";await window.FAH_NOTES.status(f,id,nx)}
+    else if(b.dataset.stat){const id=b.dataset.stat,cur=(x.status||{})[id]||"";const nx=cur===""?"toured":cur==="toured"?"applied":"";if(nx==="toured"){openTour(f,id);return}await window.FAH_NOTES.status(f,id,nx)}
     else if(b.dataset.fdel){const id=b.dataset.fdel;x.ids=x.ids.filter(i=>i!==id);writeFolder(f);renderList();buildPins()}}catch(err){folderMsg="Couldn't save that. Try again.";renderList()}},true);
+function openTour(f,id){const a=APTS.find(y=>y.id===id);if(!a)return;let d=$("#tourDlg");if(!d){d=document.createElement("div");d.id="tourDlg";document.body.appendChild(d)}let v=0;
+  d.innerHTML=`<div class="tbox" role="dialog" aria-label="Toured"><b>You toured ${esc(a.name)}</b><p>How was it? Your roommates will see this in the folder.</p>
+    <div class="tvote"><button type="button" data-tv="1" aria-pressed="false">👍 Liked it</button><button type="button" data-tv="-1" aria-pressed="false">👎 Didn't like it</button></div>
+    <textarea id="tTxt" maxlength="500" rows="3" placeholder="Add a comment (optional)"></textarea>
+    <div class="tbtns"><button type="button" id="tSkip">Skip</button><button type="button" class="pri" id="tSave">Save</button></div></div>`;
+  d.hidden=false;const close=()=>{d.hidden=true};d.onclick=e=>{if(e.target===d)close()};
+  d.querySelectorAll("[data-tv]").forEach(b=>b.onclick=()=>{v=+b.dataset.tv;d.querySelectorAll("[data-tv]").forEach(y=>y.setAttribute("aria-pressed",y===b))});
+  const go=async full=>{try{await window.FAH_NOTES.status(f,id,"toured");if(full){if(v)await window.FAH_NOTES.vote(f,id,v);const t=$("#tTxt").value.trim();if(t)await window.FAH_NOTES.set(f,id,t)}}catch(e){folderMsg="Couldn't save that. Try again.";renderList()}close()};
+  d.querySelector("#tSkip").onclick=()=>go(false);d.querySelector("#tSave").onclick=()=>go(true)}
 function openCompare(f){const P=fPrefs(f);let d=$("#cmpDlg");if(!d){d=document.createElement("div");d.id="cmpDlg";document.body.appendChild(d)}
   const ppl=P.map(p=>p.name),pr=P.map(p=>p.prefs||{});const yes='<span class="ck">✓</span>',no='<span class="dash">–</span>';
   const rows=[["Max price",p=>p.max?money(p.max):no],["Max walk",p=>p.walk?p.walk+" min":no],["Drives?",p=>p.noCar?"No":p.drive?"≤ "+p.drive+" min":no],["Bedroom",p=>({own:"Own",shared:"Shared",any:"Either"})[p.room||"own"]],
@@ -827,7 +845,8 @@ function openCompare(f){const P=fPrefs(f);let d=$("#cmpDlg");if(!d){d=document.c
     ${unset.length?`<div class="csum">${esc(unset.join(", "))} ${unset.length===1?"hasn't":"haven't"} set preferences yet.</div>`:""}
     <div class="frow"><button type="button" class="fb pri" id="cMine">Edit my preferences</button></div></div>`;
   d.hidden=false;const close=()=>{d.hidden=true};d.querySelector("#cX").onclick=close;d.onclick=e=>{if(e.target===d)close()};d.querySelector("#cMine").onclick=()=>{close();openPrefScreen(false)}}
-$("#listView").addEventListener("click",e=>{const g=e.target.closest("[data-fgrp]");if(g&&openFolder){foldFilter=g.dataset.fgrp;renderList();return}if(e.target.closest("#fCompare")&&openFolder)openCompare(openFolder)});
+$("#listView").addEventListener("click",e=>{if(e.target.closest("#fuMore")){feedOpen=!feedOpen;renderList();return}const fx=e.target.closest("#fuX");if(fx){try{localStorage.setItem("fah.feedSeen."+fx.dataset.root,Date.now())}catch(er){}feedOpen=false;renderList();return}
+  const g=e.target.closest("[data-fgrp]");if(g&&openFolder){foldFilter=g.dataset.fgrp;renderList();return}if(e.target.closest("#fCompare")&&openFolder)openCompare(openFolder)});
 
 function readHash(){let h="";try{h=decodeURIComponent(location.hash.slice(1))}catch(e){return}
   const m=/^folder-([a-z0-9]{8,40})((?:--[a-z0-9-]+)*)$/.exec(h);if(!m)return;const f=m[1];
@@ -842,7 +861,7 @@ const _visible=visible;visible=function(){if(tab==="saved"&&openFolder){const id
 const _renderList=renderList;renderList=function(){_renderList();renderFolderBar();
   if(tab==="saved"&&openFolder&&folders[openFolder]){const x=folders[openFolder];document.querySelectorAll("#list .res").forEach(li=>{const id=li.dataset.id,ns=notesFor(openFolder,id),by=(x.addedBy||{})[id];const rt=li.querySelector(".rt");if(!rt)return;
     const b=document.createElement("button");b.type="button";b.className="nicon"+(ns.length?" has":"");b.dataset.noteF=openFolder;b.dataset.noteId=id;b.setAttribute("aria-label",ns.length?"Read notes":"Add a note");
-    b.innerHTML=NOTE_SVG+(ns.length?`<span>${esc(ns[0].text.slice(0,60))}${ns.length>1?` +${ns.length-1}`:""}</span>`:"<span>Add note</span>");rt.appendChild(b);
+    b.innerHTML=NOTE_SVG+(ns.length?`<span>${esc(ns[0].text.slice(0,60))}${ns.length>1?` +${ns.length-1}`:""}</span>`:`<span>${x.private?"Add note":"Add comment"}</span>`);rt.appendChild(b);
     if(by&&!x.private){const s2=document.createElement("span");s2.className="addedby";s2.textContent="Added by "+by;rt.appendChild(s2)}});decorateRows(openFolder)}};
 const _visible2=visible;visible=function(){if(tab==="saved"&&openFolder&&folders[openFolder]&&sharedish(openFolder)&&foldFilter!=="all"){const G=fGroups(openFolder).find(g=>g.k===foldFilter);if(G){const s=new Set(G.ids);return APTS.filter(a=>s.has(a.id)).filter(matchesQuery)}}return _visible2()};
 $("#list").addEventListener("click",e=>{const b=e.target.closest(".nicon");if(!b)return;e.stopPropagation();e.preventDefault();openNote(b.dataset.noteF,b.dataset.noteId)},true);
@@ -857,11 +876,11 @@ function renderFolderBar(){const el=$("#fold");if(!el)return;if(tab==="for"){ren
     const kids=(!x.private&&!sub)?`<div class="fnote">Folders inside</div><div class="chips">${(x.kids||[]).map(k=>`<button class="chip" data-open-fold="${k.code}">📁 ${esc(k.name)} <span style="color:var(--fg2)">${folderIds(k.code).length||""}</span></button>`).join("")}<button class="chip" id="fNewIn">+ New folder inside</button></div>${foldEdit==="newin"?editBox("","Create","Like “Pool places” or “Tour list”"):""}`:"";
     const srcF=allFolderCodes().filter(c=>c!==f&&folderIds(c).length);const addBox=foldAddOpen===f?`<div class="fnote">Add everything from:</div><div class="chips"><button class="chip" data-add-from="saves">❤️ All my saves (${[...hearts].length})</button>${srcF.map(c=>`<button class="chip" data-add-from="${c}">${folders[c].private?"🔒":"📁"} ${esc(folderTitle(c))} (${folderIds(c).length})</button>`).join("")}</div>`:"";
     el.innerHTML=`<div class="fbar"><div class="fhead"><button class="fb" id="fBack" aria-label="Back">${back}</button><b>${x.private?"🔒":"📁"} ${esc(x.name)}</b><span>${n} place${n===1?"":"s"}</span></div>
-      <div class="fnote">${esc(who)}</div>${btns}${addBox}${groupsHtml(f)}
+      ${sharedish(f)?feedHtml(f):""}<div class="fnote">${esc(who)}</div>${btns}${addBox}${groupsHtml(f)}
       ${foldLinkShown===f?`<div class="frow"><input id="fLink" readonly value="${esc(foldLinkVal||folderLink(f))}" aria-label="Folder link"></div><div class="fnote">Copied (if not, select the link above and copy it). Paste it into a text. ${window.FAH_AUTH&&window.FAH_AUTH.isAdmin?"New people make an account, you approve them, then the folder opens for them.":"They'll need an account the site owner has approved."}</div>`:""}
       ${linkExtra&&linkExtra.f===f?`<div class="frow"><span class="fnote" style="flex:1">The link you opened has ${linkExtra.ids.length} place${linkExtra.ids.length===1?"":"s"} that ${linkExtra.ids.length===1?"isn't":"aren't"} in your copy yet.</span><button class="fb pri" id="fMerge">Add ${linkExtra.ids.length===1?"it":"them"}</button></div>`:""}
       ${kids}
-      ${n?`<div class="fnote">Tap the note icon on a place to leave a note${x.private?"":" everyone in the folder can see"}.</div>`:`<div class="fnote">Empty for now. Open any place and tap <b>${esc(x.name)}</b> under Folders to add it.</div>`}${msg}</div>`}
+      ${n?`<div class="fnote">${x.private?"Tap the note icon on a place to leave a note.":"Tap the comment icon on a place to leave a comment for everyone in the folder."}</div>`:`<div class="fnote">Empty for now. Open any place and tap <b>${esc(x.name)}</b> under Folders to add it.</div>`}${msg}</div>`}
   else{const list=[...myFolders].filter(f=>folders[f]);const mine=list.filter(f=>folders[f].private),shared=list.filter(f=>!folders[f].private);
     const chip=f=>`<button class="chip" data-open-fold="${f}">${folders[f].private?"🔒":"📁"} ${esc(folders[f].name)} <span style="color:var(--fg2)">${folderIds(f).length}</span></button>`;
     el.innerHTML=`<div class="fbar"><div class="fhead"><b>Folders</b><span>${list.length?"":"Organize your saves, or plan with roommates"}</span></div>
@@ -895,7 +914,7 @@ $("#listView").addEventListener("keydown",e=>{if(e.target.id==="fName"&&e.key===
 const _renderCard=renderCard;renderCard=function(){_renderCard();const a=APTS.find(x=>x.id===selected);if(!a)return;
   const secs=$("#card").querySelectorAll(".sec");const last=secs[secs.length-1];if(!last)return;const list=allFolderCodes();const inF=list.filter(f=>folderIds(f).includes(a.id));
   last.insertAdjacentHTML("afterend",`<div class="sec" id="cardFold"><h4>Folders</h4><div class="chips">${list.map(f=>{const on=folderIds(f).includes(a.id);return `<button class="chip" aria-pressed="${on}" data-fold-toggle="${f}">${on?"✓ ":""}${folders[f].private?"🔒":"📁"} ${esc(folderTitle(f))}</button>`}).join("")}<button class="chip" data-fold-new="1">+ New folder with this place</button></div>
-    ${inF.length?`<div class="cnotes">${inF.map(f=>{const ns=notesFor(f,a.id);return `<button type="button" class="cnote" data-note-f="${f}">${NOTE_SVG}<span><b>${esc(folderTitle(f))}</b>${ns.length?ns.map(n=>`<i>${esc(n.name)}: ${esc(n.text)}</i>`).join(""):"<i>Add a note</i>"}</span></button>`}).join("")}</div>`:""}</div>`)};
+    ${inF.length?`<div class="cnotes">${inF.map(f=>{const ns=notesFor(f,a.id);return `<button type="button" class="cnote" data-note-f="${f}">${NOTE_SVG}<span><b>${esc(folderTitle(f))}</b>${ns.length?ns.map(n=>`<i>${esc(n.name)}: ${esc(n.text)}</i>`).join(""):`<i>${folders[f].private?"Add a note":"Add a comment"}</i>`}</span></button>`}).join("")}</div>`:""}</div>`)};
 $("#card").addEventListener("click",e=>{const nb=e.target.closest("[data-note-f]");if(nb){e.stopPropagation();openNote(nb.dataset.noteF,selected);return}const t=e.target.closest("[data-fold-toggle],[data-fold-new]");if(!t)return;e.stopPropagation();
   if(t.dataset.foldToggle)toggleInFolder(t.dataset.foldToggle,selected);
   else{const f=createFolder("Our places",selected);openFolder=f;foldEdit=f;renderCard()}});
