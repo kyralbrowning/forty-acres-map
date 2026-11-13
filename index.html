@@ -561,7 +561,7 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
 #ai .plist{flex:1;overflow:auto;padding:8px 10px}#ai .pitem{display:flex;align-items:center;gap:4px;border-radius:12px}#ai .pitem.on{background:var(--chip,#f1ede9)}
 #ai .popen{flex:1;min-width:0;text-align:left;border:0;background:none;color:inherit;font:inherit;padding:10px 8px;cursor:pointer;display:flex;flex-direction:column;gap:2px}#ai .popen b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#ai .popen span{font-size:12px;color:var(--fg2,#7a6f66)}
 #ai .pdel{border:0;background:none;color:var(--fg2,#7a6f66);font-size:14px;padding:8px 10px;cursor:pointer;border-radius:8px}
-#ai .tabwrap{padding:10px 14px;border-bottom:.5px solid var(--hair,#e6ddd4);box-shadow:0 2px 6px rgba(0,0,0,.04);position:relative;z-index:1}#ai .tabwrap .tabs{margin:0!important}#ai .pgrp{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--fg2,#7a6f66);padding:12px 8px 4px}#ai .pgrp:first-child{padding-top:4px}#ai .pnone{padding:24px 8px;color:var(--fg2,#7a6f66);font-size:14px;text-align:center}
+#ai .tabwrap{padding:10px 14px;border-bottom:.5px solid var(--hair,#e6ddd4);box-shadow:0 2px 6px rgba(0,0,0,.04);position:relative;z-index:1}#ai .tabwrap .tabs{margin:0!important}#ai .acts{margin-top:8px;background:var(--glass-solid,#fff);border-radius:11px;padding:8px 10px;border:.5px solid var(--hair,#ddd)}#ai .acts ul{margin:0 0 8px;padding-left:18px;font-size:13.5px}#ai .acts .abtns{display:flex;gap:6px}#ai .acts button{border:0;border-radius:9px;font:inherit;font-weight:600;font-size:13.5px;padding:7px 12px;cursor:pointer;background:var(--chip,#eee);color:inherit}#ai .acts .ago{background:#bf5700;color:#fff}#ai .adone{font-size:13px;color:var(--fg2,#777)}#ai .pgrp{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--fg2,#7a6f66);padding:12px 8px 4px}#ai .pgrp:first-child{padding-top:4px}#ai .pnone{padding:24px 8px;color:var(--fg2,#7a6f66);font-size:14px;text-align:center}
 #ai .pfoot{display:flex;justify-content:space-between;align-items:center;padding:10px 14px calc(12px + env(safe-area-inset-bottom,0px));border-top:.5px solid var(--hair,#eee);font-size:12px;color:var(--fg2,#7a6f66)}#ai .pfoot button{border:0;background:none;color:#c0392b;font:inherit;font-weight:600;cursor:pointer}#ai .pfoot button[hidden]{display:none}
 #fold .pform input[type=range]{width:100%;margin:2px 0 6px}
 .ptog{display:flex;gap:10px;align-items:flex-start;background:var(--glass-solid,#fff);border-radius:12px;padding:10px 12px;margin:2px 0 8px;cursor:pointer}
@@ -719,8 +719,23 @@ function persist(){if(!cur||!cur.msgs.length)return;cur.updated=Date.now();const
 function newChat(){cur={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),title:"",updated:Date.now(),msgs:[]};render()}
 function bubble(m){const d=document.createElement("div");d.className="m "+(m.role==="me"?"me":"bot")+(m.err?" err":"");
   if(m.role==="me")d.textContent=m.text;else if(m.err)d.textContent=m.text;else d.innerHTML=md(m.text);
+  if(m.actions&&m.actions.length)d.appendChild(actionCard(m));
   if(m.placeId){const b=document.createElement("button");b.type="button";b.className="mapbtn";b.textContent="Show it on the map";b.onclick=()=>showPlace(m.placeId);d.appendChild(b)}
   $a("aiMsgs").appendChild(d);return d}
+function actLine(a){const P=(a.places||[]).map(p=>p.name),list=P.length>3?P.slice(0,3).join(", ")+` and ${P.length-3} more`:P.join(", ");
+  return a.type==="save"?`Save ${list}`:a.type==="unsave"?`Unsave ${list}`:a.type==="create_folder"?`Make ${a.private?"a just-me":"a"} folder “${a.name}”${a.inside?` inside “${a.inside.name}”`:""}${P.length?` with ${list}`:""}`:
+    a.type==="add_to_folder"?`Add ${list} to “${a.folder.name}”`:a.type==="remove_from_folder"?`Remove ${list} from “${a.folder.name}”`:a.type==="note"?`Note on ${list} in “${a.folder.name}”: “${a.text}”`:""}
+async function runActions(acts){const F=window.FAH_FOLDERS;if(!F)throw new Error("not ready");
+  for(const a of acts){const ids=(a.places||[]).map(p=>p.id);
+    if(a.type==="save")F.heart(ids,true);else if(a.type==="unsave")F.heart(ids,false);
+    else if(a.type==="create_folder")F.create(a.name,ids,{private:a.private,parent:a.inside?a.inside.code:null});
+    else if(a.type==="add_to_folder")F.add(a.folder.code,ids);else if(a.type==="remove_from_folder")F.remove(a.folder.code,ids);
+    else if(a.type==="note")await F.note(a.folder.code,ids[0],a.text)}}
+function actionCard(m){const box=document.createElement("div");box.className="acts";
+  if(m.done){box.innerHTML=`<div class="adone">${m.done==="yes"?"Done.":"Skipped."}</div>`;return box}
+  box.innerHTML=`<ul>${m.actions.map(a=>`<li>${esc(actLine(a))}</li>`).join("")}</ul><div class="abtns"><button type="button" class="ago">Do it</button><button type="button" class="ano">No thanks</button></div>`;
+  box.querySelector(".ago").onclick=async()=>{box.querySelector(".ago").disabled=true;try{await runActions(m.actions);m.done="yes";persist();box.innerHTML='<div class="adone">Done.</div>'}catch(e){box.querySelector(".ago").disabled=false;box.insertAdjacentHTML("beforeend",'<div class="adone">Something went wrong. Try again.</div>')}};
+  box.querySelector(".ano").onclick=()=>{m.done="no";persist();box.innerHTML='<div class="adone">Skipped.</div>'};return box}
 function intro(){const d=bubble({role:"bot",text:mode==="ask"?"Ask me to compare places or find options, like price, walk time, pool or your own bathroom. I can see your saved places too.":"Type the name of a place that isn't on the map. I'll check it's real, look up its info, and add it if it's within about a 20-minute drive of campus."});d.classList.add("intro");
   if(mode==="ask"&&!cur.msgs.length){const s=document.createElement("div");s.className="sugg";suggestions().forEach(t=>{const b=document.createElement("button");b.type="button";b.textContent=t;b.onclick=()=>{$a("aiQ").value=t;$a("aiForm").requestSubmit()};s.appendChild(b)});$a("aiMsgs").appendChild(s)}}
 /* starter questions: built from this person's preferences, saves, what they open, and skipping ones they already asked */
@@ -771,7 +786,7 @@ $a("aiForm").onsubmit=async e=>{e.preventDefault();if(busy)return;const q=$a("ai
   const mine={role:"me",text:q,kind:mode};chat.msgs.push(mine);if(!chat.title)chat.title=(mode==="add"?"Add: ":"")+q.slice(0,60);bubble(mine);$a("aiQ").value="";
   const w=bubble({role:"bot",text:mode==="ask"?"*Thinking…*":"*Looking it up… this can take 20–30 seconds.*"});w.innerHTML="<i>"+(mode==="ask"?"Thinking…":"Looking it up… this can take 20–30 seconds.")+"</i>";$a("aiMsgs").scrollTop=1e9;
   let reply;
-  try{if(mode==="ask"){const r=await call({action:"ask",question:q,history:hist});reply={role:"bot",text:r.answer||"",kind:"ask"}}
+  try{if(mode==="ask"){const fl=window.FAH_FOLDERS?window.FAH_FOLDERS.list():[];const r=await call({action:"ask",question:q,history:hist,folders:fl});reply={role:"bot",text:r.answer||"",kind:"ask"};if(r.actions&&r.actions.length)reply.actions=r.actions}
     else{const web=$a("aiWeb").value.trim(),addr=$a("aiAddr").value.trim();const r=await call({action:"add",query:q,website:web||undefined,address:addr||undefined});if(r.needWebsite)CAN_SEARCH=CAN_SEARCH&&!!web;reply={role:"bot",text:r.message||"",kind:"add"};if(r.ok){$a("aiWeb").value="";$a("aiAddr").value="";reply.placeId=r.id}else if(r.exists&&r.id)reply.placeId=r.id;else if(r.needWebsite)setTimeout(()=>$a("aiWeb").focus(),50)}}
   catch(x){reply={role:"bot",text:x.message,err:true,kind:mode}}
   finally{busy=false;$a("aiGo").disabled=false}

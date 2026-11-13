@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    if (body.action === "ask") return out(await ask(db, u.user.id, String(body.question || "").slice(0, 600), Array.isArray(body.history) ? body.history.slice(-6) : []));
+    if (body.action === "ask") return out(await ask(db, u.user.id, String(body.question || "").slice(0, 600), Array.isArray(body.history) ? body.history.slice(-6) : [], Array.isArray(body.folders) ? body.folders.slice(0, 40) : []));
     if (body.action === "add") return out(await add(db, u.user, String(body.query || "").slice(0, 200), safeUrl(body.website), typeof body.address === "string" ? body.address.slice(0, 160) : ""));
     return out({ error: "Unknown action" }, 400);
   } catch (e: any) {
@@ -176,7 +176,7 @@ function line(p: any) {
   return `${p.name} | ${p.kind || "apartment"} | ${p.neighborhood || ""} | ${p.priceMin ? "$" + p.priceMin + (p.priceMax && p.priceMax !== p.priceMin ? "-" + p.priceMax : "") : "price ?"} | walk ${t ? t.walk + " min" : "?"} | pool ${yn(p.pool)} | own bath ${yn(p.privateBath)} | balcony ${yn(p.balcony)} | windows every bedroom ${yn(p.windowsEveryBedroom)} | plans ${(p.plans || []).join(",")}`;
 }
 
-async function ask(db: any, uid: string, q: string, history: any[]) {
+async function ask(db: any, uid: string, q: string, history: any[], folders: any[] = []) {
   if (!q.trim()) return { answer: "Ask me anything about the places on the map." };
   const places = await allPlaces(db);
   const { data: hearts } = await db.from("hearts").select("place_id").eq("user_id", uid);
@@ -198,6 +198,14 @@ HOW TO WRITE:
 - No emojis, except that you may very rarely add one 🧡 or 🤘 at the end of a reply (at most one, and not in most replies).
 The user's saved places are marked saved:true.
 
+DOING THINGS FOR THE USER:
+You can also save places, unsave places, make folders, add or remove places in folders, and write notes on places in folders, but only when the user asks for it.
+Their folders: ${folders.length ? folders.map((f: any) => `"${String(f.name).slice(0, 60)}" (${f.private ? "just them" : f.sub ? "inside a shared folder" : "shared"})`).join(", ") : "none yet"}.
+Folders can only go inside a shared folder (one level). Private folders can't have folders inside.
+When the user asks you to do one of these, say in one short sentence what you'll do, then end your reply with exactly one block like this (JSON, exact place names from the list, exact folder names):
+<actions>[{"type":"save","places":["Place Name"]},{"type":"unsave","places":["Place Name"]},{"type":"create_folder","name":"New name","inside":"Existing shared folder name or null","private":false,"places":["Place Name"]},{"type":"add_to_folder","folder":"Folder name","places":["Place Name"]},{"type":"remove_from_folder","folder":"Folder name","places":["Place Name"]},{"type":"note","folder":"Folder name","place":"Place Name","text":"the note"}]</actions>
+Only include the actions they asked for. If they refer to "those" or "these", use the places from your last answer. Never include the block otherwise.
+
 ALL PLACES (one per line):
 ${places.map(line).join("\n")}
 
@@ -205,7 +213,28 @@ DETAILS FOR SAVED OR MENTIONED PLACES:
 ${detail.join("\n")}`;
   const contents = [...history.filter((h: any) => h && typeof h.text === "string").map((h: any) => ({ role: h.role === "ai" ? "model" : "user", parts: [{ text: h.text.slice(0, 1500) }] })), { role: "user", parts: [{ text: q }] }];
   const r = await gemini(contents, { system });
-  return { answer: r.text || "I couldn't come up with an answer. Try asking another way." };
+  let text = r.text || "I couldn't come up with an answer. Try asking another way.";
+  let actions: any[] = [];
+  const m = text.match(/<actions>([\s\S]*?)<\/actions>/i);
+  if (m) {
+    text = text.replace(m[0], "").trim();
+    try {
+      const raw = JSON.parse(m[1]);
+      const byName = new Map(places.map((p: any) => [slug(p.name || ""), p]));
+      const findP = (n: any) => { const k = slug(String(n || "")); return byName.get(k) || places.find((p: any) => slug(p.name || "").includes(k) && k.length >= 5); };
+      const fNames = new Map(folders.map((f: any) => [String(f.name).toLowerCase(), f]));
+      const findF = (n: any) => { const k = String(n || "").toLowerCase(); return fNames.get(k) || folders.find((f: any) => String(f.name).toLowerCase().endsWith("› " + k)) || null; };
+      for (const a of Array.isArray(raw) ? raw.slice(0, 10) : []) {
+        const ids = (Array.isArray(a.places) ? a.places : a.place ? [a.place] : []).map(findP).filter(Boolean).slice(0, 60);
+        const P = ids.map((p: any) => ({ id: p.id, name: p.name }));
+        if ((a.type === "save" || a.type === "unsave") && P.length) actions.push({ type: a.type, places: P });
+        else if (a.type === "create_folder" && a.name) { const par = a.inside ? findF(a.inside) : null; actions.push({ type: "create_folder", name: String(a.name).slice(0, 40), inside: par && !par.private && !par.sub ? { code: par.code, name: par.name } : null, private: !par && !!a.private, places: P }); }
+        else if ((a.type === "add_to_folder" || a.type === "remove_from_folder") && P.length) { const f = findF(a.folder); if (f) actions.push({ type: a.type, folder: { code: f.code, name: f.name }, places: P }); }
+        else if (a.type === "note" && P.length && a.text) { const f = findF(a.folder); if (f) actions.push({ type: "note", folder: { code: f.code, name: f.name }, places: P.slice(0, 1), text: String(a.text).slice(0, 500) }); }
+      }
+    } catch (e) { console.error("actions parse", (e as any)?.message); }
+  }
+  return { answer: text, actions };
 }
 
 async function add(db: any, user: any, query: string, website: string | null, address = "") {
