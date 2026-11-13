@@ -165,7 +165,8 @@ async function add(db: any, user: any, query: string, website: string | null) {
   if (query.trim().length < 3) return { ok: false, message: "Type the name of the place." };
   const places = await allPlaces(db);
   const qs = slug(query);
-  const dup = places.find(p => p.id === qs || slug(p.name || "").includes(qs) || qs.includes(slug(p.name || "") || "@@"));
+  const core = (x: string) => x.replace(/^the-/, "").replace(/-(apartments?|austin|atx|tx)$/g, "");
+  const dup = places.find(p => { const ps = slug(p.name || ""); return ps === qs || core(ps) === core(qs) || (core(qs).length >= 6 && ps.includes(core(qs))); });
   if (dup) return { ok: false, exists: true, id: dup.id, message: `${dup.name} is already on the map.` };
 
   // 1) Try web search (Gemini + Google Search). 2) Fall back to the website the user gave.
