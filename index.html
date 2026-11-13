@@ -643,7 +643,24 @@ function bubble(m){const d=document.createElement("div");d.className="m "+(m.rol
   if(m.placeId){const b=document.createElement("button");b.type="button";b.className="mapbtn";b.textContent="Show it on the map";b.onclick=()=>showPlace(m.placeId);d.appendChild(b)}
   $a("aiMsgs").appendChild(d);return d}
 function intro(){const d=bubble({role:"bot",text:mode==="ask"?"Ask me to compare places or find options, like price, walk time, pool or your own bathroom. I can see your saved places too.":"Type the name of a place that isn't on the map. I'll check it's real, look up its info, and add it if it's within about a 20-minute drive of campus."});d.classList.add("intro");
-  if(mode==="ask"&&!cur.msgs.length){const s=document.createElement("div");s.className="sugg";["Compare my saved places","Which have a pool and my own bathroom under $1,200?","Closest places with a balcony","What's the cheapest 4x4 in West Campus?"].forEach(t=>{const b=document.createElement("button");b.type="button";b.textContent=t;b.onclick=()=>{$a("aiQ").value=t;$a("aiForm").requestSubmit()};s.appendChild(b)});$a("aiMsgs").appendChild(s)}}
+  if(mode==="ask"&&!cur.msgs.length){const s=document.createElement("div");s.className="sugg";suggestions().forEach(t=>{const b=document.createElement("button");b.type="button";b.textContent=t;b.onclick=()=>{$a("aiQ").value=t;$a("aiForm").requestSubmit()};s.appendChild(b)});$a("aiMsgs").appendChild(s)}}
+/* starter questions: built from this person's preferences, saves, what they open, and skipping ones they already asked */
+function suggestions(){let c={};try{c=window.FAH_CTX?window.FAH_CTX():{}}catch(e){}const p=c.prefs||{},t=c.trends,m=c.money||(n=>"$"+n);
+  const asked=new Set();loadAll().forEach(ch=>ch.msgs.forEach(x=>{if(x.role==="me")asked.add(x.text.trim().toLowerCase())}));
+  const L=[],add=q=>{if(q&&!asked.has(q.toLowerCase())&&!L.includes(q))L.push(q)};
+  const hood=(p.hoods&&p.hoods[0])||(t&&t.hoods&&t.hoods[0])||null,price=p.max||(t&&t.price?Math.round(t.price/50)*50+100:null),plan=(p.plans&&p.plans[0])||(t&&t.plans&&t.plans[0])||null;
+  const must=(p.must||[]).map(k=>((c.amen||[]).find(x=>x[0]===k)||[,k])[1]).filter(Boolean).map(x=>x.toLowerCase());
+  if((c.saved||[]).length>=2)add("Compare my saved places");
+  if((c.saved||[]).length>=1)add("Which of my saved places is the best deal?");
+  if((c.saved||[]).length)add(`What's similar to ${c.saved[c.saved.length-1]} but cheaper?`);
+  if((c.viewed||[]).length)add(`Is ${c.viewed[0]} worth it?`);
+  if(price||must.length||plan)add(`Best ${plan?plan+" ":""}places${must.length?" with "+must.slice(0,2).join(" and "):""}${price?" under "+m(price):""}`);
+  if(hood)add(`Cheapest places in ${hood} with my own bathroom`);
+  if(p.walk)add(`What's within a ${p.walk}-minute walk under ${m(price||1300)}?`);
+  if(t&&t.am&&t.am.length)add(`More places with ${t.am[0][1].toLowerCase()} like the ones I've saved`);
+  if((c.saved||[]).length>=1)add("Which of my saved places have a balcony?");
+  ["Cheapest places with a pool and my own bathroom","Closest places to campus under $1,200","What's the cheapest 4x4 in West Campus?","Which places have a window in every bedroom?","Places with all bills paid","Best places for a 2x2 near campus"].forEach(add);
+  return L.slice(0,4)}
 function render(){$a("aiMsgs").innerHTML="";intro();cur.msgs.forEach(bubble);$a("aiMsgs").scrollTop=1e9}
 function setMode(m){mode=m;$a("aiTAsk").setAttribute("aria-pressed",m==="ask");$a("aiTAdd").setAttribute("aria-pressed",m==="add");$a("aiWeb").hidden=m!=="add";$a("aiAddr").hidden=m!=="add";
   $a("aiQ").placeholder=m==="ask"?"Ask anything about the places":"Place name (required), e.g. The Castilian";if(m==="add")checkCaps();$a("aiGo").textContent=m==="ask"?"Send":"Find & add";
