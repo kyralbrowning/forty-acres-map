@@ -742,7 +742,7 @@ function folderLink(f){const ids=folderIds(f).filter(id=>APTS.some(a=>a.id===id)
 function newFid(){const a=new Uint8Array(10);crypto.getRandomValues(a);return [...a].map(b=>"abcdefghijklmnopqrstuvwxyz0123456789"[b%36]).join("")}
 function subFolder(f){if(!DB||folderSubs.has(f))return;folderSubs.add(f);
   DB.doc("folders/"+f).onSnapshot(d=>{if(folders[f]&&folders[f].localOnly)return;if(d.exists){const x=d.data()||{};folders[f]={name:String(x.name||"Shared folder").slice(0,40),ids:(Array.isArray(x.ids)?x.ids:[]).filter(i=>typeof i==="string"&&i.length<80).slice(0,300),live:true,
-      private:!!x.private,parent:x.parent||null,kids:Array.isArray(x.kids)?x.kids:[],people:Array.isArray(x.people)?x.people:[],notes:x.notes&&typeof x.notes==="object"?x.notes:{},addedBy:x.addedBy||{}};
+      private:!!x.private,parent:x.parent||null,kids:Array.isArray(x.kids)?x.kids:[],people:Array.isArray(x.people)?x.people:[],notes:x.notes&&typeof x.notes==="object"?x.notes:{},addedBy:x.addedBy||{},votes:x.votes||{},status:x.status||{},prefsBy:Array.isArray(x.prefsBy)?x.prefsBy:[]};
       for(const k of folders[f].kids){if(!folders[k.code])folders[k.code]={name:k.name,ids:[],parent:f,live:false};else folders[k.code].name=k.name;subFolder(k.code)}}
     else if(folders[f]){folders[f].live=true;writeFolder(f)}
     cacheFolders();renderList();buildPins();if(selected)renderCard()},()=>{})}
@@ -774,9 +774,55 @@ window.FAH_FOLDERS={list:()=>allFolderCodes().map(f=>({code:f,name:folderTitle(f
   heart:(ids,on)=>{for(const id of ids){if(on!==hearts.has(id))toggleHeart(id)}},
   saved:()=>[...hearts],
   places:()=>APTS.map(a=>({id:a.id,name:a.name})),
-  open:id=>openCard(id,false)};
+  open:id=>openCard(id,false),_raw:()=>folders};
 
 function toggleInFolder(f,id){const x=folders[f];if(!x)return;x.ids=x.ids.includes(id)?x.ids.filter(i=>i!==id):[...x.ids,id];writeFolder(f);renderList();buildPins();if(selected)renderCard()}
+/* ---------- shared folder extras: votes, status, smart groups, everyone's preferences ---------- */
+let foldFilter="all";
+function fPeople(f){const x=folders[f];if(!x)return[];const P=x.parent&&folders[x.parent]?folders[x.parent]:x;const pb=(x.prefsBy&&x.prefsBy.length?x.prefsBy:P.prefsBy)||[];return pb.length?pb.map(p=>p.name):(x.people||P.people||[])}
+function fPrefs(f){const x=folders[f];if(!x)return[];const P=x.parent&&folders[x.parent]?folders[x.parent]:x;return (x.prefsBy&&x.prefsBy.length?x.prefsBy:P.prefsBy)||[]}
+const sharedish=f=>folders[f]&&!folders[f].private;
+function avgMax(f){const ms=fPrefs(f).map(p=>p.prefs&&p.prefs.max).filter(v=>typeof v==="number"&&v>0);return ms.length?Math.round(ms.reduce((a,b)=>a+b,0)/ms.length):null}
+function delReason(f,id){const x=folders[f],a=APTS.find(y=>y.id===id);if(!x||!a)return null;const v=(x.votes||{})[id]||{up:[],down:[]};const r=[];
+  if(v.down.length&&v.down.length>=v.up.length)r.push(v.down.length===1?`${v.down[0]==="You"?"You":v.down[0]} gave it a 👎`:`${v.down.length} people gave it a 👎`);
+  const am=avgMax(f),pr=a.own!=null?a.own:PR(a);if(am&&pr!=null&&pr>am)r.push(`${money(pr)} is over the group's average max (${money(am)})`);
+  return r.length?r.join(" · "):null}
+function fGroups(f){const x=folders[f];const ids=folderIds(f).filter(id=>APTS.some(a=>a.id===id));const V=x.votes||{},S=x.status||{};const ppl=fPeople(f);
+  const g=[{k:"all",l:"All",ids}];
+  if(ppl.length>1)g.push({k:"everyone",l:"Everyone likes",ids:ids.filter(id=>{const v=V[id];return v&&v.up.length>=ppl.length&&!v.down.length})});
+  for(const n of ppl)g.push({k:"p:"+n,l:n==="You"?"You like":n+" likes",ids:ids.filter(id=>V[id]&&V[id].up.includes(n))});
+  g.push({k:"toured",l:"Toured",ids:ids.filter(id=>S[id]==="toured")},{k:"applied",l:"Applied",ids:ids.filter(id=>S[id]==="applied")});
+  g.push({k:"del",l:"Maybe delete",ids:ids.filter(id=>delReason(f,id))});
+  return g}
+function groupsHtml(f){if(!sharedish(f))return"";const G=fGroups(f);if(!G.some(g=>g.k===foldFilter))foldFilter="all";
+  return `<div class="fgroups" role="group" aria-label="Groups">${G.filter(g=>g.k==="all"||g.ids.length||g.k===foldFilter||g.k==="del").map(g=>`<button type="button" class="fgrp${g.k==="del"?" del":""}" data-fgrp="${esc(g.k)}" aria-pressed="${foldFilter===g.k}"><span>${esc(g.l)}</span><b>${g.ids.length}</b></button>`).join("")}</div>
+    <div class="frow"><button type="button" class="fb" id="fCompare">Compare everyone's preferences</button></div>`}
+function decorateRows(f){if(!sharedish(f))return;const x=folders[f];document.querySelectorAll("#list .res").forEach(li=>{const id=li.dataset.id,rt=li.querySelector(".rt");if(!rt||rt.querySelector(".fvote"))return;
+  const v=(x.votes||{})[id]||{up:[],down:[],mine:0},st=(x.status||{})[id]||"";const bar=document.createElement("div");bar.className="fvote";
+  bar.innerHTML=`<button type="button" class="vb${v.mine===1?" on":""}" data-vote="1" data-vid="${esc(id)}" aria-label="Thumbs up" title="${esc(v.up.join(", "))}">👍 ${v.up.length||""}</button><button type="button" class="vb${v.mine===-1?" on":""}" data-vote="-1" data-vid="${esc(id)}" aria-label="Thumbs down" title="${esc(v.down.join(", "))}">👎 ${v.down.length||""}</button><button type="button" class="sb${st?" on":""}" data-stat="${esc(id)}">${st==="toured"?"✓ Toured":st==="applied"?"✓ Applied":"Mark toured"}</button>`;
+  if(foldFilter==="del"){const why=delReason(f,id);if(why){const w=document.createElement("div");w.className="fwhy";w.textContent=why;rt.appendChild(w)}const del=document.createElement("button");del.type="button";del.className="vdel";del.dataset.fdel=id;del.textContent="Remove";bar.appendChild(del)}
+  rt.appendChild(bar)})}
+$("#list").addEventListener("click",async e=>{const b=e.target.closest("[data-vote],[data-stat],[data-fdel]");if(!b||!openFolder)return;e.stopPropagation();e.preventDefault();const f=openFolder,x=folders[f];
+  try{if(b.dataset.vote){const id=b.dataset.vid,cur=((x.votes||{})[id]||{}).mine||0,v=+b.dataset.vote;await window.FAH_NOTES.vote(f,id,cur===v?0:v)}
+    else if(b.dataset.stat){const id=b.dataset.stat,cur=(x.status||{})[id]||"";const nx=cur===""?"toured":cur==="toured"?"applied":"";await window.FAH_NOTES.status(f,id,nx)}
+    else if(b.dataset.fdel){const id=b.dataset.fdel;x.ids=x.ids.filter(i=>i!==id);writeFolder(f);renderList();buildPins()}}catch(err){folderMsg="Couldn't save that. Try again.";renderList()}},true);
+function openCompare(f){const P=fPrefs(f);let d=$("#cmpDlg");if(!d){d=document.createElement("div");d.id="cmpDlg";document.body.appendChild(d)}
+  const ppl=P.map(p=>p.name),pr=P.map(p=>p.prefs||{});const yes='<span class="ck">✓</span>',no='<span class="dash">–</span>';
+  const rows=[["Max price",p=>p.max?money(p.max):no],["Max walk",p=>p.walk?p.walk+" min":no],["Drives?",p=>p.noCar?"No":p.drive?"≤ "+p.drive+" min":no],["Bedroom",p=>({own:"Own",shared:"Shared",any:"Either"})[p.room||"own"]],
+    ["Type",p=>(p.kinds||[]).length?(p.kinds||[]).map(k=>({apartment:"Apt",dorm:"Dorm",house:"House"})[k]||k).join(", "):no],["Floor plans",p=>(p.plans||[]).length?p.plans.join(", "):no]];
+  const MUST=[...AMEN.map(([k,l])=>[k,l]),["balc","Balcony"]];const used=MUST.filter(([k])=>pr.some(p=>(p.must||[]).includes(k)));
+  used.forEach(([k,l])=>rows.push([l,p=>(p.must||[]).includes(k)?yes:no]));
+  if(pr.some(p=>(p.hoods||[]).length))rows.push(["Neighborhoods",p=>(p.hoods||[]).length?p.hoods.join(", "):no]);
+  if(pr.some(p=>p.minRating))rows.push(["Rating",p=>p.minRating?p.minRating+"+ ★":no]);
+  const am=avgMax(f);const unset=P.filter(p=>!p.prefs).map(p=>p.name);
+  d.innerHTML=`<div class="cbox" role="dialog" aria-label="Everyone's preferences"><div class="chd"><div><b>Everyone's preferences</b><span>${esc(folderTitle(f))}</span></div><button type="button" id="cX" aria-label="Close">✕</button></div>
+    ${am?`<div class="csum">Average max price: <b>${money(am)}</b>. Places over this go in <b>Maybe delete</b>.</div>`:""}
+    <div class="ctable"><table><thead><tr><th></th>${ppl.map(n=>`<th>${esc(n)}</th>`).join("")}</tr></thead><tbody>${rows.map(([l,fn])=>`<tr><th>${esc(l)}</th>${pr.map(p=>`<td>${fn(p)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    ${unset.length?`<div class="csum">${esc(unset.join(", "))} ${unset.length===1?"hasn't":"haven't"} set preferences yet.</div>`:""}
+    <div class="frow"><button type="button" class="fb pri" id="cMine">Edit my preferences</button></div></div>`;
+  d.hidden=false;const close=()=>{d.hidden=true};d.querySelector("#cX").onclick=close;d.onclick=e=>{if(e.target===d)close()};d.querySelector("#cMine").onclick=()=>{close();openPrefScreen(false)}}
+$("#listView").addEventListener("click",e=>{const g=e.target.closest("[data-fgrp]");if(g&&openFolder){foldFilter=g.dataset.fgrp;renderList();return}if(e.target.closest("#fCompare")&&openFolder)openCompare(openFolder)});
+
 function readHash(){let h="";try{h=decodeURIComponent(location.hash.slice(1))}catch(e){return}
   const m=/^folder-([a-z0-9]{8,40})((?:--[a-z0-9-]+)*)$/.exec(h);if(!m)return;const f=m[1];
   const parts=m[2].split("--").filter(Boolean);let nm=null;const ids=[];for(const p of parts){if(p.startsWith("title-"))nm=unslugName(p.slice(6));else ids.push(p)}
@@ -791,7 +837,8 @@ const _renderList=renderList;renderList=function(){_renderList();renderFolderBar
   if(tab==="saved"&&openFolder&&folders[openFolder]){const x=folders[openFolder];document.querySelectorAll("#list .res").forEach(li=>{const id=li.dataset.id,ns=notesFor(openFolder,id),by=(x.addedBy||{})[id];const rt=li.querySelector(".rt");if(!rt)return;
     const b=document.createElement("button");b.type="button";b.className="nicon"+(ns.length?" has":"");b.dataset.noteF=openFolder;b.dataset.noteId=id;b.setAttribute("aria-label",ns.length?"Read notes":"Add a note");
     b.innerHTML=NOTE_SVG+(ns.length?`<span>${esc(ns[0].text.slice(0,60))}${ns.length>1?` +${ns.length-1}`:""}</span>`:"<span>Add note</span>");rt.appendChild(b);
-    if(by&&!x.private){const s2=document.createElement("span");s2.className="addedby";s2.textContent="Added by "+by;rt.appendChild(s2)}})}};
+    if(by&&!x.private){const s2=document.createElement("span");s2.className="addedby";s2.textContent="Added by "+by;rt.appendChild(s2)}});decorateRows(openFolder)}};
+const _visible2=visible;visible=function(){if(tab==="saved"&&openFolder&&folders[openFolder]&&sharedish(openFolder)&&foldFilter!=="all"){const G=fGroups(openFolder).find(g=>g.k===foldFilter);if(G){const s=new Set(G.ids);return APTS.filter(a=>s.has(a.id)).filter(matchesQuery)}}return _visible2()};
 $("#list").addEventListener("click",e=>{const b=e.target.closest(".nicon");if(!b)return;e.stopPropagation();e.preventDefault();openNote(b.dataset.noteF,b.dataset.noteId)},true);
 function renderFolderBar(){const el=$("#fold");if(!el)return;if(tab==="for"){renderPrefs(el);return}if(tab!=="saved"){el.innerHTML="";return}
   const msg=folderMsg?`<div class="fnote warn">${esc(folderMsg)}</div>`:"";
@@ -803,7 +850,7 @@ function renderFolderBar(){const el=$("#fold");if(!el)return;if(tab==="for"){ren
     const btns=foldEdit===f?editBox(x.name,"Save"):`<div class="frow">${(!x.private&&!sub)?'<button class="fb pri" id="fCopy">Copy link to send</button>':""}<button class="fb" id="fRename">Rename</button>${sub||x.private?'<button class="fb" id="fDelete">Delete folder</button>':'<button class="fb" id="fLeave">Remove from my list</button>'}</div>`;
     const kids=(!x.private&&!sub)?`<div class="fnote">Folders inside</div><div class="chips">${(x.kids||[]).map(k=>`<button class="chip" data-open-fold="${k.code}">📁 ${esc(k.name)} <span style="color:var(--fg2)">${folderIds(k.code).length||""}</span></button>`).join("")}<button class="chip" id="fNewIn">+ New folder inside</button></div>${foldEdit==="newin"?editBox("","Create","Like “Pool places” or “Tour list”"):""}`:"";
     el.innerHTML=`<div class="fbar"><div class="fhead"><button class="fb" id="fBack" aria-label="Back">${back}</button><b>${x.private?"🔒":"📁"} ${esc(x.name)}</b><span>${n} place${n===1?"":"s"}</span></div>
-      <div class="fnote">${esc(who)}</div>${btns}
+      <div class="fnote">${esc(who)}</div>${btns}${groupsHtml(f)}
       ${foldLinkShown===f?`<div class="frow"><input id="fLink" readonly value="${esc(foldLinkVal||folderLink(f))}" aria-label="Folder link"></div><div class="fnote">Copied (if not, select the link above and copy it). Paste it into a text. ${window.FAH_AUTH&&window.FAH_AUTH.isAdmin?"New people make an account, you approve them, then the folder opens for them.":"They'll need an account the site owner has approved."}</div>`:""}
       ${linkExtra&&linkExtra.f===f?`<div class="frow"><span class="fnote" style="flex:1">The link you opened has ${linkExtra.ids.length} place${linkExtra.ids.length===1?"":"s"} that ${linkExtra.ids.length===1?"isn't":"aren't"} in your copy yet.</span><button class="fb pri" id="fMerge">Add ${linkExtra.ids.length===1?"it":"them"}</button></div>`:""}
       ${kids}
@@ -818,10 +865,10 @@ function renderFolderBar(){const el=$("#fold");if(!el)return;if(tab==="for"){ren
       <div class="fnote" style="padding:2px 14px 6px">Your hearts below are just yours.</div>`}
 }
 $("#listView").addEventListener("click",async e=>{const t=e.target.closest("button");if(!t||!t.closest("#fold")||tab!=="saved")return;folderMsg="";
-  if(t.dataset.openFold){openFolder=t.dataset.openFold;foldEdit=null;foldLinkShown=null;foldLinkVal="";subFolder(openFolder)}
+  if(t.dataset.openFold){foldFilter="all";openFolder=t.dataset.openFold;foldEdit=null;foldLinkShown=null;foldLinkVal="";subFolder(openFolder)}
   else if(t.id==="fNew"||t.id==="fNew2"){foldEdit="new";newKind=t.dataset.kind||"shared"}
   else if(t.id==="fNewIn"){foldEdit="newin"}
-  else if(t.id==="fBack"){const x=folders[openFolder];openFolder=x&&x.parent&&folders[x.parent]?x.parent:null;foldEdit=null;foldLinkShown=null}
+  else if(t.id==="fBack"){foldFilter="all";const x=folders[openFolder];openFolder=x&&x.parent&&folders[x.parent]?x.parent:null;foldEdit=null;foldLinkShown=null}
   else if(t.id==="fDelete"){const x=folders[openFolder];if(!confirm(`Delete “${x.name}”${x.parent?"":" for everyone in it"}?`))return;const f=openFolder;try{await window.FAH_NOTES.remove(f)}catch(err){folderMsg="Only the person who made it can delete it.";renderList();return}
     if(x.parent&&folders[x.parent])folders[x.parent].kids=(folders[x.parent].kids||[]).filter(k=>k.code!==f);myFolders.delete(f);delete folders[f];saveMyFolders();openFolder=x.parent||null}
   else if(t.id==="fRename"){foldEdit=openFolder}

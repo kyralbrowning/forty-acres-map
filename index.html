@@ -289,7 +289,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
     <button class="grab" id="grab" aria-label="Expand or collapse the list"></button>
     <div class="ph">
       <div class="brand">
-        <div class="logo" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8 2 5 5 5 8.9c0 5 6 10.2 6.4 10.6.3.3.9.3 1.2 0C13 19.1 19 13.9 19 8.9 19 5 16 2 12 2zm3.2 9.3c0 .4-.3.7-.7.7h-1.6V9.9h-1.8V12H9.5c-.4 0-.7-.3-.7-.7V8.4L12 5.8l3.2 2.6z"/></svg></div>
+        <div class="logo" aria-hidden="true"><img src="icons/icon-192.png" alt="" width="38" height="38"></div>
         <div><h1>Forty Acres Housing Map</h1><p>Student apartments near UT Austin</p></div>
       </div>
       <div class="search">
@@ -392,20 +392,25 @@ function myFoldersDoc(uid){let last=[];return{
     for(const c of last.filter(i=>!ids.includes(i))){const f=folderIdByCode[c];if(f)await sb.from("folder_members").delete().eq("folder_id",f).eq("user_id",uid)}last=ids.slice()}}}
 function folderDoc(code){let last=null,fid=null,cbs=[];
   const load=async()=>{if(!fid)fid=await fidFor(code,false);if(!fid){cbs.forEach(cb=>cb(snap(false,null)));return}
-    let [f,p,nt,kids,ppl]=await Promise.all([sb.from("folders").select("name,private,parent_id").eq("id",fid).maybeSingle(),sb.from("folder_places").select("place_id,created_at,added_by").eq("folder_id",fid).order("created_at"),
-      sb.from("folder_notes").select("place_id,user_id,body,updated_at").eq("folder_id",fid),sb.from("folders").select("invite_code,name").eq("parent_id",fid).order("created_at"),sb.rpc("folder_people",{f:fid})]);
+    let [f,p,nt,kids,ppl,vt,pf]=await Promise.all([sb.from("folders").select("name,private,parent_id").eq("id",fid).maybeSingle(),sb.from("folder_places").select("place_id,created_at,added_by,status").eq("folder_id",fid).order("created_at"),
+      sb.from("folder_notes").select("place_id,user_id,body,updated_at").eq("folder_id",fid),sb.from("folders").select("invite_code,name").eq("parent_id",fid).order("created_at"),sb.rpc("folder_people",{f:fid}),sb.from("folder_votes").select("place_id,user_id,vote").eq("folder_id",fid),sb.rpc("folder_prefs",{f:fid})]);
+    if(p.error)p=await sb.from("folder_places").select("place_id,created_at,added_by").eq("folder_id",fid).order("created_at");
     if(f.error)f=await sb.from("folders").select("name").eq("id",fid).maybeSingle();
     if(!f.data){cbs.forEach(cb=>cb(snap(false,null)));return}
     const uid=await uidP;const names={};(ppl.data||[]).forEach(r=>names[r.user_id]=r.name);
     let parent=null;if(f.data.parent_id){const pr=await sb.from("folders").select("invite_code").eq("id",f.data.parent_id).maybeSingle();parent=pr.data?pr.data.invite_code:null;if(parent)folderIdByCode[parent]=f.data.parent_id}
     const notes={};(nt.data||[]).forEach(r=>{(notes[r.place_id]=notes[r.place_id]||[]).push({mine:r.user_id===uid,name:r.user_id===uid?"You":(names[r.user_id]||"Someone"),text:r.body,at:r.updated_at})});
     const addedBy={};(p.data||[]).forEach(r=>{if(r.added_by)addedBy[r.place_id]=r.added_by===uid?"You":(names[r.added_by]||null)});
-    last={name:f.data.name,ids:(p.data||[]).map(r=>r.place_id),private:!!f.data.private,parent,kids:(kids.data||[]).map(k=>{folderIdByCode[k.invite_code]=folderIdByCode[k.invite_code]||null;return{code:k.invite_code,name:k.name}}),
+    const votes={};(vt.data||[]).forEach(r=>{const v=votes[r.place_id]=votes[r.place_id]||{up:[],down:[],mine:0};const nm=r.user_id===uid?"You":(names[r.user_id]||"Someone");(r.vote>0?v.up:v.down).push(nm);if(r.user_id===uid)v.mine=r.vote});
+    const status={};(p.data||[]).forEach(r=>{if(r.status)status[r.place_id]=r.status});
+    const prefsBy=(pf.data||[]).map(r=>({name:r.user_id===uid?"You":r.name,mine:r.user_id===uid,prefs:r.prefs&&!r.prefs.cleared?r.prefs:null}));
+    last={name:f.data.name,ids:(p.data||[]).map(r=>r.place_id),private:!!f.data.private,parent,votes,status,prefsBy,kids:(kids.data||[]).map(k=>{folderIdByCode[k.invite_code]=folderIdByCode[k.invite_code]||null;return{code:k.invite_code,name:k.name}}),
       people:(ppl.data||[]).map(r=>r.name),notes,addedBy};cbs.forEach(cb=>cb(snap(true,last)))};
   let subbed=false;const sub=()=>{if(subbed||!fid)return;subbed=true;
     sb.channel("f-"+fid).on("postgres_changes",{event:"*",schema:"public",table:"folder_places",filter:"folder_id=eq."+fid},load)
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"folders",filter:"id=eq."+fid},load)
       .on("postgres_changes",{event:"*",schema:"public",table:"folder_notes",filter:"folder_id=eq."+fid},load)
+      .on("postgres_changes",{event:"*",schema:"public",table:"folder_votes",filter:"folder_id=eq."+fid},load)
       .on("postgres_changes",{event:"*",schema:"public",table:"folders",filter:"parent_id=eq."+fid},load).subscribe()};
   return{
   onSnapshot(cb,err){cbs.push(cb);load().then(sub).catch(e=>err&&err(e));return()=>{}},
@@ -420,6 +425,10 @@ const docs={};
 window.FAH_NOTES={async set(code,placeId,text){const fid=await fidFor(code,false);if(!fid)throw new Error("no folder");const uid=await uidP;text=String(text||"").trim().slice(0,500);
     const r=text?await sb.from("folder_notes").upsert({folder_id:fid,place_id:placeId,user_id:uid,body:text,updated_at:new Date().toISOString()}):await sb.from("folder_notes").delete().eq("folder_id",fid).eq("place_id",placeId).eq("user_id",uid);
     if(r.error)throw r.error;const d=docs["folders/"+code];if(d&&d.reload)await d.reload()},
+  async vote(code,placeId,v){const fid=await fidFor(code,false);const uid=await uidP;
+    const r=v?await sb.from("folder_votes").upsert({folder_id:fid,place_id:placeId,user_id:uid,vote:v,updated_at:new Date().toISOString()}):await sb.from("folder_votes").delete().eq("folder_id",fid).eq("place_id",placeId).eq("user_id",uid);
+    if(r.error)throw r.error;const d=docs["folders/"+code];if(d&&d.reload)await d.reload()},
+  async status(code,placeId,st){const fid=await fidFor(code,false);const r=await sb.from("folder_places").update({status:st||null}).eq("folder_id",fid).eq("place_id",placeId);if(r.error)throw r.error;const d=docs["folders/"+code];if(d&&d.reload)await d.reload()},
   async remove(code){const fid=await fidFor(code,false);if(!fid)return;const r=await sb.from("folders").delete().eq("id",fid);if(r.error)throw r.error}};
 async function makeDb(){const uid=await uidP;if(!uid)return null;
   return{doc(path){if(docs[path])return docs[path];let d;const m=/^data\/users\/[^/]+\/(hearts|prefs|folders)$/.exec(path),fm=/^folders\/([a-z0-9]{8,40})$/.exec(path);
@@ -496,7 +505,7 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
 </script>
 <div id="gate" hidden>
   <div class="gcard">
-    <div class="glogo">🏠</div>
+    <div class="glogo"><img src="icons/icon-192.png" alt="" width="56" height="56"></div>
     <h1>Forty Acres Housing Map</h1>
     <p class="gsub" id="gSub">Sign in to see the map, your saves and shared folders.</p>
     <form id="gForm" autocomplete="on">
@@ -593,7 +602,18 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
 #prefScreen.modal{background:rgba(0,0,0,.4);align-items:center;justify-content:center;padding:16px}
 #prefScreen.modal>*{width:100%;max-width:560px;background:var(--glass-solid)}#prefScreen.modal .pshead{border-radius:18px 18px 0 0;padding-top:16px}#prefScreen.modal .pswrap{flex:0 1 auto;max-height:calc(100vh - 210px)}#prefScreen.modal .psfoot{border-radius:0 0 18px 18px}
 @media (max-width:720px){#prefScreen.modal{padding:10px;align-items:flex-end}#prefScreen.modal .pswrap{max-height:calc(100vh - 190px)}}
-#prefScreen input[type=range],#fold input[type=range]{accent-color:#bf5700}body.noscroll{overflow:hidden}.pdrive[hidden]{display:none}
+#prefScreen input[type=range],#fold input[type=range]{accent-color:#bf5700}.fgroups{display:flex;gap:8px;overflow-x:auto;padding:4px 0 8px;margin:4px 0 2px;scrollbar-width:none}.fgroups::-webkit-scrollbar{display:none}
+.fgrp{flex:none;display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:92px;border:1px solid var(--hair);border-radius:12px;background:var(--glass-solid);color:var(--fg);font:inherit;padding:8px 11px;cursor:pointer;text-align:left}
+.fgrp span{font-size:12px;color:var(--fg2);white-space:nowrap}.fgrp b{font-size:17px}.fgrp[aria-pressed=true]{border-color:#bf5700;background:#bf5700;color:#fff}.fgrp[aria-pressed=true] span{color:#ffe7d1}.fgrp.del span{color:var(--bad)}.fgrp.del[aria-pressed=true]{background:var(--bad);border-color:var(--bad)}.fgrp.del[aria-pressed=true] span{color:#fff}
+.fvote{display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap}.fvote button{border:1px solid var(--hair);background:var(--glass-solid);color:var(--fg);font:inherit;font-size:12.5px;border-radius:999px;padding:3px 9px;cursor:pointer}.fvote .vb.on{background:#bf5700;border-color:#bf5700;color:#fff}.fvote .sb.on{background:var(--good);border-color:var(--good);color:#fff}.fvote .vdel{border-color:var(--bad);color:var(--bad)}
+.fwhy{font-size:12px;color:var(--bad);margin-top:4px}
+#cmpDlg{position:fixed;inset:0;z-index:5400;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:16px}#cmpDlg[hidden]{display:none}
+#cmpDlg .cbox{background:var(--glass-solid);color:var(--fg);border-radius:18px;width:100%;max-width:620px;max-height:88vh;overflow:auto;padding:16px;box-shadow:var(--shadow)}
+#cmpDlg .chd{display:flex;justify-content:space-between;gap:10px;margin-bottom:8px}#cmpDlg .chd b{display:block;font-size:17px}#cmpDlg .chd span{font-size:12.5px;color:var(--fg2)}#cmpDlg .chd button{border:0;background:none;color:inherit;font-size:18px;cursor:pointer;align-self:flex-start}
+#cmpDlg .csum{font-size:13px;color:var(--fg2);margin:6px 0 10px}#cmpDlg .ctable{overflow-x:auto}
+#cmpDlg table{border-collapse:collapse;width:100%;font-size:13.5px}#cmpDlg th,#cmpDlg td{padding:8px 10px;border-bottom:.5px solid var(--hair);text-align:center;white-space:nowrap}#cmpDlg tbody th{text-align:left;font-weight:600;color:var(--fg2)}#cmpDlg thead th{font-size:13px}
+#cmpDlg .ck{color:var(--good);font-weight:800;font-size:15px}#cmpDlg .dash{color:var(--fg3)}#cmpDlg .fb{border:0;border-radius:11px;background:#bf5700;color:#fff;font:inherit;font-weight:650;padding:10px 14px;cursor:pointer;margin-top:12px}
+.brand .logo{background:none!important;overflow:hidden;padding:0}.brand .logo img{width:100%;height:100%;display:block}.glogo{background:none!important;overflow:hidden;width:56px!important;height:56px!important;border-radius:14px}.glogo img{width:100%;height:100%;display:block}body.noscroll{overflow:hidden}.pdrive[hidden]{display:none}
 #noteDlg{position:fixed;inset:0;z-index:5400;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:16px}#noteDlg[hidden]{display:none}
 #noteDlg .nbox{background:var(--glass-solid);color:var(--fg);border-radius:18px;width:100%;max-width:420px;padding:16px;box-shadow:var(--shadow);max-height:86vh;overflow:auto}
 #noteDlg .nhd{display:flex;justify-content:space-between;gap:10px;margin-bottom:10px}#noteDlg .nhd b{display:block;font-size:16px}#noteDlg .nhd span{font-size:12.5px;color:var(--fg2)}#noteDlg .nhd button{border:0;background:none;color:inherit;font-size:18px;cursor:pointer;align-self:flex-start}
