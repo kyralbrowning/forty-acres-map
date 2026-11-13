@@ -700,6 +700,10 @@ function renderFilters(){
   $("#fUnknown").checked=S.unknown;$("#fPerBed").checked=!!S.perBed;$("#sort").value=S.sort;$("#rings").setAttribute("aria-pressed",S.rings);
 }
 function refresh(){saveFilters();renderFilters();renderList();buildPins()}
+$("#fUsePrefs").onclick=()=>{const p=PREFS;if(!p){$("#fUseMsg").textContent="Set your preferences first.";openPrefScreen(false);return}
+  const am=(p.must||[]).filter(k=>AMEN.some(x=>x[0]===k));const balc=[...(p.balc||[])];if((p.must||[]).includes("balc")&&!balc.length)balc.push("any");
+  Object.assign(S,{price:p.max||2100,walk:p.walk||95,drive:p.noCar?30:(p.drive||30),room:p.room||"own",plans:[...(p.plans||[])],am,balc,minRating:p.minRating||0,hoods:[...(p.hoods||[])],kinds:[...(p.kinds||[])]});
+  if(p.noCar){S.mode="walk";const m=$("#mode");if(m)m.value="walk"}refresh();$("#fUseMsg").textContent="Filters now match your preferences."};
 const tog=(arr,v)=>arr.includes(v)?arr.filter(x=>x!==v):[...arr,v];
 $("#fWalk").oninput=e=>{S.walk=+e.target.value;$("#oWalk").textContent=S.walk>=95?"Any":S.walk+" min";renderList();buildPins();saveFilters()};
 $("#fDrive").oninput=e=>{S.drive=+e.target.value;$("#oDrive").textContent=S.drive>=30?"Any":S.drive+" min";renderList();buildPins();saveFilters()};
@@ -800,6 +804,8 @@ function groupsHtml(f){if(!sharedish(f))return"";const G=fGroups(f);if(!G.some(g
 function decorateRows(f){if(!sharedish(f))return;const x=folders[f];document.querySelectorAll("#list .res").forEach(li=>{const id=li.dataset.id,rt=li.querySelector(".rt");if(!rt||rt.querySelector(".fvote"))return;
   const v=(x.votes||{})[id]||{up:[],down:[],mine:0},st=(x.status||{})[id]||"";const bar=document.createElement("div");bar.className="fvote";
   bar.innerHTML=`<button type="button" class="vb${v.mine===1?" on":""}" data-vote="1" data-vid="${esc(id)}" aria-label="Thumbs up" title="${esc(v.up.join(", "))}">👍 ${v.up.length||""}</button><button type="button" class="vb${v.mine===-1?" on":""}" data-vote="-1" data-vid="${esc(id)}" aria-label="Thumbs down" title="${esc(v.down.join(", "))}">👎 ${v.down.length||""}</button><button type="button" class="sb${st?" on":""}" data-stat="${esc(id)}">${st==="toured"?"✓ Toured":st==="applied"?"✓ Applied":"Mark toured"}</button>`;
+  const maxes=fPrefs(f).map(p=>p.prefs&&p.prefs.max).filter(v=>typeof v==="number"&&v>0);const a0=APTS.find(y=>y.id===id),pr0=a0?(a0.own!=null?a0.own:PR(a0)):null;
+  if(maxes.length&&pr0!=null){const n=maxes.filter(m=>pr0<=m).length;const fb=document.createElement("span");fb.className="fitb"+(n===maxes.length?" all":n===0?" none":"");fb.textContent=n===maxes.length?`Fits everyone's budget`:`Fits ${n} of ${maxes.length} budgets`;rt.appendChild(fb)}
   if(foldFilter==="del"){const why=delReason(f,id);if(why){const w=document.createElement("div");w.className="fwhy";w.textContent=why;rt.appendChild(w)}const del=document.createElement("button");del.type="button";del.className="vdel";del.dataset.fdel=id;del.textContent="Remove";bar.appendChild(del)}
   rt.appendChild(bar)})}
 $("#list").addEventListener("click",async e=>{const b=e.target.closest("[data-vote],[data-stat],[data-fdel]");if(!b||!openFolder)return;e.stopPropagation();e.preventDefault();const f=openFolder,x=folders[f];
@@ -913,13 +919,12 @@ function draftOf(p){return{max:p.max||null,walk:p.walk||null,drive:p.drive||null
 function prefFields(p){const chips=(arr,key,sel)=>arr.map(([k,l])=>`<button type="button" class="chip" aria-pressed="${sel.includes(k)}" data-p${key}="${esc(k)}">${esc(l)}</button>`).join("");
   const one=(arr,key,v)=>arr.map(([k,l])=>`<button type="button" class="chip" aria-pressed="${String(v)===String(k)}" data-p${key}="${esc(k)}">${esc(l)}</button>`).join("");
   const MUST=[...AMEN.map(([k,l])=>[k,l]),["balc","Balcony"]];
-  return `<label class="ptog"><input type="checkbox" id="pNoCar" ${p.noCar?"checked":""}><span><b>I don't drive</b><i>Walking only. Hides drive times and driving options.</i></span></label>
-   <label class="ptog"><input type="checkbox" id="pStrict" ${p.strict?"checked":""}><span><b>Only show places that match</b><i>Off: your preferences are a guide, and other good places can still show up.</i></span></label>
+  return `<label class="ptog"><input type="checkbox" id="pStrict" ${p.strict?"checked":""}><span><b>Only show places that match</b><i>Off: your preferences are a guide, and other good places can still show up.</i></span></label>
    <div class="fnote">Type</div><div class="chips">${chips([["apartment","Apartments"],["dorm","Dorms"],["house","Houses"]],"k",p.kinds||[])}</div>
    <div class="fnote">Bedroom</div><div class="chips">${one([["own","My own bedroom"],["shared","Shared bedroom"],["any","Either"]],"r",p.room||"own")}</div>
    <div class="fnote">Max price: <b id="pMaxO">${p.max?money(p.max):"Any"}</b></div><input type="range" id="pMax" min="600" max="2100" step="50" value="${p.max||2100}">
    <div class="fnote">Max walk to campus: <b id="pWalkO">${p.walk?p.walk+" min":"Any"}</b></div><input type="range" id="pWalk" min="5" max="60" step="5" value="${p.walk||60}">
-   <div class="pdrive"${p.noCar?" hidden":""}><div class="fnote">Max drive to campus: <b id="pDriveO">${p.drive?p.drive+" min":"Any"}</b></div><input type="range" id="pDrive" min="5" max="30" step="5" value="${p.drive||30}"></div>
+   <div class="fnote drow"><span>Max drive to campus: <b id="pDriveO">${p.noCar?"I don't drive":p.drive?p.drive+" min":"Any"}</b></span><label class="nodrive"><input type="checkbox" id="pNoCar" ${p.noCar?"checked":""}> I don't drive</label></div><div class="pdrive"${p.noCar?" hidden":""}><input type="range" id="pDrive" min="5" max="30" step="5" value="${p.drive||30}"></div>
    <div class="fnote">Floor plans</div><div class="chips">${chips(PLAN_CHIPS,"pl",p.plans||[])}</div>
    <div class="fnote">Must have</div><div class="chips">${chips(MUST,"m",p.must||[])}</div>
    <div class="fnote">Balcony</div><div class="chips">${chips(BALC_FILTERS,"b",p.balc||[])}</div>
@@ -934,7 +939,7 @@ document.addEventListener("input",e=>{const el=e.target.closest("[data-pbox]");i
   if(e.target.id==="pWalk"){const v=+e.target.value;el._draft.walk=v>=60?null:v;o("#pWalkO").textContent=v>=60?"Any":v+" min"}
   if(e.target.id==="pDrive"){const v=+e.target.value;el._draft.drive=v>=30?null:v;o("#pDriveO").textContent=v>=30?"Any":v+" min"}
   if(e.target.id==="pStrict")el._draft.strict=e.target.checked;
-  if(e.target.id==="pNoCar"){el._draft.noCar=e.target.checked;if(e.target.checked)el._draft.drive=null;const dv=el.querySelector(".pdrive");if(dv)dv.hidden=e.target.checked}});
+  if(e.target.id==="pNoCar"){el._draft.noCar=e.target.checked;if(e.target.checked)el._draft.drive=null;const dv=el.querySelector(".pdrive");if(dv)dv.hidden=e.target.checked;o("#pDriveO").textContent=e.target.checked?"I don't drive":"Any";const r=el.querySelector("#pDrive");if(r)r.value=30}});
 document.addEventListener("click",e=>{const t=e.target.closest("button");if(!t)return;
   if(t.id==="pEdit"&&t.closest("#fold")){openPrefScreen(false);return}
   const el=t.closest("[data-pbox]");if(!el)return;

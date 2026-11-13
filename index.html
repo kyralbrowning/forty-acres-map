@@ -312,6 +312,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
     </div>
     <div class="scroll" id="scroll">
       <div id="filters" hidden>
+        <div class="fg usepref"><button type="button" class="fbtn upref" id="fUsePrefs">Filter with my preferences</button><span id="fUseMsg"></span></div>
         <div class="fg"><h3>Type</h3><div class="chips" id="fKind"></div></div>
         <div class="fg"><h3>Bedroom</h3><div class="chips" id="fRoom"></div></div>
         <div class="fg"><h3>Max walk to campus <output id="oWalk"></output></h3><input id="fWalk" type="range" min="5" max="95" step="5" aria-label="Maximum walk time in minutes"></div>
@@ -598,7 +599,7 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
 #prefScreen .psfoot{padding:12px 18px calc(12px + env(safe-area-inset-bottom,0px));border-top:.5px solid var(--hair);display:flex;justify-content:center}#prefScreen .psfoot .fb{width:100%;max-width:640px;padding:13px;font-size:16px}
 #prefScreen .fb,#noteDlg .fb{border:0;border-radius:11px;background:var(--chip);color:var(--fg);font:inherit;font-weight:650;font-size:14px;padding:9px 14px;cursor:pointer}#prefScreen .fb.pri,#noteDlg .fb.pri{background:#bf5700;color:#fff}
 #prefScreen .psbody .fnote{margin:14px 0 6px;font-size:13px;font-weight:650;color:var(--fg)}#prefScreen .psbody .fnote b{color:#bf5700}#prefScreen .ptog{background:var(--chip)}
-#prefScreen .pswrap{flex:1;min-height:0;overflow:auto;display:flex;justify-content:center}#prefScreen .pswrap .psbody{flex:none;overflow:visible;max-width:min(640px,100%);width:100%;box-sizing:border-box}#prefScreen{overflow:hidden}#prefScreen.modal>*{box-sizing:border-box}
+#prefScreen .pswrap{flex:1;min-height:0;overflow:auto;display:flex;justify-content:center}#prefScreen .pswrap .psbody{flex:none;overflow:visible;align-self:flex-start;max-width:min(640px,100%);width:100%;box-sizing:border-box}#prefScreen{overflow:hidden}#prefScreen.modal>*{box-sizing:border-box}
 #prefScreen.modal{background:rgba(0,0,0,.4);align-items:center;justify-content:center;padding:16px}
 #prefScreen.modal>*{width:100%;max-width:560px;background:var(--glass-solid)}#prefScreen.modal .pshead{border-radius:18px 18px 0 0;padding-top:16px}#prefScreen.modal .pswrap{flex:0 1 auto;max-height:calc(100vh - 210px)}#prefScreen.modal .psfoot{border-radius:0 0 18px 18px}
 @media (max-width:720px){#prefScreen.modal{padding:10px;align-items:flex-end}#prefScreen.modal .pswrap{max-height:calc(100vh - 190px)}}
@@ -613,7 +614,7 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
 #cmpDlg .csum{font-size:13px;color:var(--fg2);margin:6px 0 10px}#cmpDlg .ctable{overflow-x:auto}
 #cmpDlg table{border-collapse:collapse;width:100%;font-size:13.5px}#cmpDlg th,#cmpDlg td{padding:8px 10px;border-bottom:.5px solid var(--hair);text-align:center;white-space:nowrap}#cmpDlg tbody th{text-align:left;font-weight:600;color:var(--fg2)}#cmpDlg thead th{font-size:13px}
 #cmpDlg .ck{color:var(--good);font-weight:800;font-size:15px}#cmpDlg .dash{color:var(--fg3)}#cmpDlg .fb{border:0;border-radius:11px;background:#bf5700;color:#fff;font:inherit;font-weight:650;padding:10px 14px;cursor:pointer;margin-top:12px}
-.brand .logo{background:none!important;overflow:hidden;padding:0}.brand .logo img{width:100%;height:100%;display:block}.glogo{background:none!important;overflow:hidden;width:56px!important;height:56px!important;border-radius:14px}.glogo img{width:100%;height:100%;display:block}body.noscroll{overflow:hidden}.pdrive[hidden]{display:none}
+.brand .logo{background:none!important;overflow:hidden;padding:0}.brand .logo img{width:100%;height:100%;display:block}.glogo{background:none!important;overflow:hidden;width:56px!important;height:56px!important;border-radius:14px}.glogo img{width:100%;height:100%;display:block}.drow{display:flex!important;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.nodrive{font-size:12.5px;font-weight:400;color:var(--fg2);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap}.nodrive input{accent-color:#bf5700;width:15px;height:15px;margin:0}.usepref{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.upref{background:#bf5700!important;color:#fff!important}#fUseMsg{font-size:12px;color:var(--fg2)}.fitb{display:block;font-size:11.5px;margin-top:3px;color:var(--fg2)}.fitb.all{color:var(--good)}.fitb.none{color:var(--bad)}body.noscroll{overflow:hidden}.pdrive[hidden]{display:none}
 #noteDlg{position:fixed;inset:0;z-index:5400;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:16px}#noteDlg[hidden]{display:none}
 #noteDlg .nbox{background:var(--glass-solid);color:var(--fg);border-radius:18px;width:100%;max-width:420px;padding:16px;box-shadow:var(--shadow);max-height:86vh;overflow:auto}
 #noteDlg .nhd{display:flex;justify-content:space-between;gap:10px;margin-bottom:10px}#noteDlg .nhd b{display:block;font-size:16px}#noteDlg .nhd span{font-size:12.5px;color:var(--fg2)}#noteDlg .nhd button{border:0;background:none;color:inherit;font-size:18px;cursor:pointer;align-self:flex-start}
@@ -662,7 +663,8 @@ A.ready.then(async s=>{if(!s){show("in");return}
       ${admin?'<button type="button" class="mi" id="mAppr">Approve people</button><button type="button" class="mi" id="mShare">Share site</button>':""}
       <button type="button" class="mi out" id="mOut">Sign out</button>`;
     m.querySelector(".mem b").textContent=s.user.email;document.body.appendChild(m);
-    const place=()=>{const r=b.getBoundingClientRect();m.style.top=(r.bottom+8)+"px";m.style.right=Math.max(12,innerWidth-r.right)+"px"};
+    const place=()=>{const r=b.getBoundingClientRect();m.style.right=Math.max(12,innerWidth-r.right)+"px";m.style.top="0px";m.style.visibility="hidden";m.hidden=false;const h=m.offsetHeight;m.hidden=true;m.style.visibility="";
+      const below=r.bottom+8,above=r.top-8-h;m.style.top=(below+h<=innerHeight-8?below:Math.max(8,above))+"px";m.style.maxHeight=(innerHeight-16)+"px";m.style.overflow="auto"};
     const close=()=>{m.hidden=true;b.setAttribute("aria-expanded","false")};
     b.onclick=e=>{e.stopPropagation();if(m.hidden){place();m.hidden=false;b.setAttribute("aria-expanded","true")}else close()};
     document.addEventListener("click",e=>{if(!m.hidden&&!m.contains(e.target)&&e.target!==b)close()});addEventListener("resize",close);
