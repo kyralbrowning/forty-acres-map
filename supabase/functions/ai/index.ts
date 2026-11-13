@@ -12,7 +12,7 @@ const MAX_DRIVE_MIN = 20; // same as the map's outer "~20 min drive" ring
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cron-key",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const out = (body: unknown, status = 200) =>

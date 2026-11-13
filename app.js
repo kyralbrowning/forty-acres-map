@@ -734,7 +734,7 @@ let rT;addEventListener("resize",()=>{clearTimeout(rT);rT=setTimeout(schedule,80
 const SITE=(typeof window!=="undefined"&&window.FAH_SITE)||"https://claude.ai/artifact/SdYcitbApo5cx7Zqs1fszD";
 let folders=(()=>{const x=store("fahm.folderData");return x&&typeof x==="object"?x:{}})();
 let myFolders=new Set((store("fahm.folders")||[]).filter(f=>/^[a-z0-9]{8,40}$/.test(f)));
-let newKind="shared",openFolder=null,myFoldersRef=null,folderMsg="",foldEdit=null,foldLinkShown=null,linkExtra=null;
+let foldAddOpen=null,newKind="shared",openFolder=null,myFoldersRef=null,folderMsg="",foldEdit=null,foldLinkShown=null,linkExtra=null;
 const folderSubs=new Set(),folderChains={};
 const nameSlug=n=>slug(n).slice(0,40);
 const unslugName=s=>{const t=s.replace(/-/g," ").trim();return t?t.charAt(0).toUpperCase()+t.slice(1):"Shared folder"};
@@ -853,10 +853,11 @@ function renderFolderBar(){const el=$("#fold");if(!el)return;if(tab==="for"){ren
     const people=(sub&&P?P.people:x.people)||[];const others=people.filter(p=>p!=="You"&&p);
     const who=x.private?"Just you":others.length?"With "+others.join(", "):"Only you so far. Send the link to share it.";
     const back=sub&&P?`‹ ${esc(P.name)}`:"‹ My saves";
-    const btns=foldEdit===f?editBox(x.name,"Save"):`<div class="frow">${(!x.private&&!sub)?'<button class="fb pri" id="fCopy">Copy link to send</button>':""}<button class="fb" id="fRename">Rename</button>${sub||x.private?'<button class="fb" id="fDelete">Delete folder</button>':'<button class="fb" id="fLeave">Remove from my list</button>'}</div>`;
+    const btns=foldEdit===f?editBox(x.name,"Save"):`<div class="frow">${(!x.private&&!sub)?'<button class="fb pri" id="fCopy">Copy link to send</button>':""}<button class="fb" id="fAddFrom">+ Add places</button><button class="fb" id="fRename">Rename</button>${sub||x.private?'<button class="fb" id="fDelete">Delete folder</button>':'<button class="fb" id="fLeave">Remove from my list</button>'}</div>`;
     const kids=(!x.private&&!sub)?`<div class="fnote">Folders inside</div><div class="chips">${(x.kids||[]).map(k=>`<button class="chip" data-open-fold="${k.code}">📁 ${esc(k.name)} <span style="color:var(--fg2)">${folderIds(k.code).length||""}</span></button>`).join("")}<button class="chip" id="fNewIn">+ New folder inside</button></div>${foldEdit==="newin"?editBox("","Create","Like “Pool places” or “Tour list”"):""}`:"";
+    const srcF=allFolderCodes().filter(c=>c!==f&&folderIds(c).length);const addBox=foldAddOpen===f?`<div class="fnote">Add everything from:</div><div class="chips"><button class="chip" data-add-from="saves">❤️ All my saves (${[...hearts].length})</button>${srcF.map(c=>`<button class="chip" data-add-from="${c}">${folders[c].private?"🔒":"📁"} ${esc(folderTitle(c))} (${folderIds(c).length})</button>`).join("")}</div>`:"";
     el.innerHTML=`<div class="fbar"><div class="fhead"><button class="fb" id="fBack" aria-label="Back">${back}</button><b>${x.private?"🔒":"📁"} ${esc(x.name)}</b><span>${n} place${n===1?"":"s"}</span></div>
-      <div class="fnote">${esc(who)}</div>${btns}${groupsHtml(f)}
+      <div class="fnote">${esc(who)}</div>${btns}${addBox}${groupsHtml(f)}
       ${foldLinkShown===f?`<div class="frow"><input id="fLink" readonly value="${esc(foldLinkVal||folderLink(f))}" aria-label="Folder link"></div><div class="fnote">Copied (if not, select the link above and copy it). Paste it into a text. ${window.FAH_AUTH&&window.FAH_AUTH.isAdmin?"New people make an account, you approve them, then the folder opens for them.":"They'll need an account the site owner has approved."}</div>`:""}
       ${linkExtra&&linkExtra.f===f?`<div class="frow"><span class="fnote" style="flex:1">The link you opened has ${linkExtra.ids.length} place${linkExtra.ids.length===1?"":"s"} that ${linkExtra.ids.length===1?"isn't":"aren't"} in your copy yet.</span><button class="fb pri" id="fMerge">Add ${linkExtra.ids.length===1?"it":"them"}</button></div>`:""}
       ${kids}
@@ -874,6 +875,8 @@ $("#listView").addEventListener("click",async e=>{const t=e.target.closest("butt
   if(t.dataset.openFold){foldFilter="all";openFolder=t.dataset.openFold;foldEdit=null;foldLinkShown=null;foldLinkVal="";subFolder(openFolder)}
   else if(t.id==="fNew"||t.id==="fNew2"){foldEdit="new";newKind=t.dataset.kind||"shared"}
   else if(t.id==="fNewIn"){foldEdit="newin"}
+  else if(t.id==="fAddFrom"){foldAddOpen=foldAddOpen===openFolder?null:openFolder}
+  else if(t.dataset.addFrom){const src=t.dataset.addFrom,ids=src==="saves"?[...hearts]:folderIds(src);const x=folders[openFolder];const before=x.ids.length;x.ids=[...new Set([...x.ids,...ids.filter(i=>APTS.some(a=>a.id===i))])];writeFolder(openFolder);foldAddOpen=null;folderMsg=`Added ${x.ids.length-before} place${x.ids.length-before===1?"":"s"}.`}
   else if(t.id==="fBack"){foldFilter="all";const x=folders[openFolder];openFolder=x&&x.parent&&folders[x.parent]?x.parent:null;foldEdit=null;foldLinkShown=null}
   else if(t.id==="fDelete"){const x=folders[openFolder];if(!confirm(`Delete “${x.name}”${x.parent?"":" for everyone in it"}?`))return;const f=openFolder;try{await window.FAH_NOTES.remove(f)}catch(err){folderMsg="Only the person who made it can delete it.";renderList();return}
     if(x.parent&&folders[x.parent])folders[x.parent].kids=(folders[x.parent].kids||[]).filter(k=>k.code!==f);myFolders.delete(f);delete folders[f];saveMyFolders();openFolder=x.parent||null}
