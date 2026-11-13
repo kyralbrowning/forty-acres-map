@@ -634,7 +634,7 @@ function renderCard(){
     <div class="sec"><h4>${a.kind==="house"?"Rent for the whole house":a.kind==="dorm"?"Price per person (monthly equivalent)":a.perApt?"Price for the whole apartment":"Price per person"}</h4><div class="price">${esc(PR(a)!=null?"From "+money(PR(a)):"Price not listed")}${PR(a)!=null?'<span style="font-size:13px;font-weight:500;color:var(--fg2)"> /mo</span>':""}</div>${a.kind==="house"&&a.own!=null?`<div class="note"><b>About ${money(a.own)}/mo each if all ${a.beds} bedrooms are filled</b></div>`:a.shared!=null?`<div class="note"><b>Your own bedroom: ${a.own!=null?"from "+money(a.own)+"/mo":"price not listed"} · Shared bedroom: from ${money(a.shared)}/mo</b></div>`:""}${a.priceMax&&a.priceMax!==a.priceMin?`<div class="note">All units: ${esc(priceTxt(a))}/mo</div>`:""}<div class="note">${esc(a.priceNote||"")}</div></div>
     ${a.deadlineOrSpecial?`<div class="callout deal"><b>Deal or deadline:</b> ${esc(a.deadlineOrSpecial)}</div>`:""}
     <div class="sec"><h4>Floor plans</h4><div class="plans">${plans}</div><div class="note">Green plans have a bathroom for every bedroom.</div></div>
-    <div class="sec"><h4>Availability</h4><dl class="kv"><dt>Status</dt><dd>${esc(a.availability||"Not listed")}</dd><dt>Lease</dt><dd>${esc(a.leaseTerm||"Not listed")}</dd><dt>Utilities</dt><dd>${esc(a.utilitiesIncluded||"Not listed")}</dd><dt>Parking</dt><dd>${a.parkingPerMonth!=null?(a.parkingPerMonth===0?"Free":money(a.parkingPerMonth)+"/month"):(a.tagSet.has("garage_parking")?"Garage parking (price not listed)":"Not listed")}</dd></dl></div>
+    <div class="sec"><h4>Availability</h4><dl class="kv"><dt>Status</dt><dd>${esc(a.availability||"Not listed")}</dd><dt>Lease</dt><dd>${esc(a.leaseTerm||"Not listed")}</dd><dt>Utilities</dt><dd>${esc(a.utilitiesIncluded||"Not listed")}</dd><dt>Parking</dt><dd>${a.parkingPerMonth!=null?(a.parkingPerMonth===0?"Free":money(a.parkingPerMonth)+"/month"):(a.parkingNote?esc(a.parkingNote):a.tagSet.has("garage_parking")?"Garage parking (price not listed)":"Not listed")}</dd></dl></div>
     <div class="sec"><h4>Amenities</h4><div class="am">
       ${amRow("Pool",a.pool,a.rooftopPool?"rooftop":"")}
       ${amRow("Private bathroom",a.privateBath===true?true:a.privateBath==="some"?true:a.privateBath,a.privateBath==="some"?"some plans":"")}
@@ -746,7 +746,7 @@ function folderLink(f){const ids=folderIds(f).filter(id=>APTS.some(a=>a.id===id)
 function newFid(){const a=new Uint8Array(10);crypto.getRandomValues(a);return [...a].map(b=>"abcdefghijklmnopqrstuvwxyz0123456789"[b%36]).join("")}
 function subFolder(f){if(!DB||folderSubs.has(f))return;folderSubs.add(f);
   DB.doc("folders/"+f).onSnapshot(d=>{if(folders[f]&&folders[f].localOnly)return;if(d.exists){const x=d.data()||{};folders[f]={name:String(x.name||"Shared folder").slice(0,40),ids:(Array.isArray(x.ids)?x.ids:[]).filter(i=>typeof i==="string"&&i.length<80).slice(0,300),live:true,
-      private:!!x.private,parent:x.parent||null,kids:Array.isArray(x.kids)?x.kids:[],people:Array.isArray(x.people)?x.people:[],notes:x.notes&&typeof x.notes==="object"?x.notes:{},addedBy:x.addedBy||{},votes:x.votes||{},status:x.status||{},flags:x.flags||{},prefsBy:Array.isArray(x.prefsBy)?x.prefsBy:[],feed:Array.isArray(x.feed)?x.feed:[]};
+      private:!!x.private,parent:x.parent||null,kids:Array.isArray(x.kids)?x.kids:[],people:Array.isArray(x.people)?x.people:[],notes:x.notes&&typeof x.notes==="object"?x.notes:{},addedBy:x.addedBy||{},votes:x.votes||{},status:x.status||{},flags:x.flags||{},kept:x.kept||{},prefsBy:Array.isArray(x.prefsBy)?x.prefsBy:[],feed:Array.isArray(x.feed)?x.feed:[]};
       for(const k of folders[f].kids){if(!folders[k.code])folders[k.code]={name:k.name,ids:[],parent:f,live:false};else folders[k.code].name=k.name;subFolder(k.code)}}
     else if(folders[f]){folders[f].live=true;writeFolder(f)}
     cacheFolders();renderList();buildPins();if(selected)renderCard()},()=>{})}
@@ -787,11 +787,23 @@ function fPeople(f){const x=folders[f];if(!x)return[];const P=x.parent&&folders[
 function fPrefs(f){const x=folders[f];if(!x)return[];const P=x.parent&&folders[x.parent]?folders[x.parent]:x;return (x.prefsBy&&x.prefsBy.length?x.prefsBy:P.prefsBy)||[]}
 const sharedish=f=>folders[f]&&!folders[f].private;
 function avgMax(f){const ms=fPrefs(f).map(p=>p.prefs&&p.prefs.max).filter(v=>typeof v==="number"&&v>0);return ms.length?Math.round(ms.reduce((a,b)=>a+b,0)/ms.length):null}
-function delReason(f,id){const x=folders[f],a=APTS.find(y=>y.id===id);if(!x||!a)return null;const fl=(x.flags||{})[id];if(fl)return `Moved here by ${fl}`;return autoReason(f,id)?"Auto-sorted: "+autoReason(f,id):null}
-function autoReason(f,id){const x=folders[f],a=APTS.find(y=>y.id===id);if(!x||!a)return null;const v=(x.votes||{})[id]||{up:[],down:[]};const r=[];
-  if(v.down.length&&v.down.length>=v.up.length)r.push(v.down.length===1?`${v.down[0]==="You"?"You":v.down[0]} gave it a 👎`:`${v.down.length} people gave it a 👎`);
-  const am=avgMax(f),pr=a.own!=null?a.own:PR(a);if(am&&pr!=null&&pr>am)r.push(`${money(pr)} is over the group's average max (${money(am)})`);
-  return r.length?r.join(" · "):null}
+/* Maybe delete: 👎 from anyone, moved by someone, or auto-sorted because it doesn't match someone's preferences */
+function delInfo(f,id){const x=folders[f],a=APTS.find(y=>y.id===id);if(!x||!a)return null;const v=(x.votes||{})[id]||{up:[],down:[]};
+  if(v.down.length)return{type:"down",who:v.down,mine:v.down.includes("You"),text:"👎 by "+v.down.join(", ")};
+  const fl=(x.flags||{})[id];if(fl)return{type:"flag",who:[fl],mine:fl==="You",text:"Moved here by "+fl};
+  if((x.kept||{})[id])return null;const r=autoReason(f,id);return r?{type:"auto",mine:true,text:"Auto-sorted: "+r}:null}
+function delReason(f,id){const d=delInfo(f,id);return d?d.text:null}
+function prefMisses(a,p,who){const out=[],d=dist(a),pr=prPref(a,p.room),w=who==="You"?"your":who+"'s",wants=who==="You"?"you want":who+" wants";
+  if(p.max&&pr!=null&&pr>p.max)out.push(`over ${w} max price (${money(p.max)})`);
+  if(p.walk&&d.walk>p.walk)out.push(`farther than ${w} ${p.walk}-min walk`);
+  if(p.drive&&!p.noCar&&d.drive>p.drive)out.push(`farther than ${w} ${p.drive}-min drive`);
+  for(const k of p.must||[]){const f=AMEN.find(x=>x[0]===k);const ok=f?f[2](a)===true:k==="balc"?!!balcKind(a):true;if(!ok){const l=f?f[1]:"a balcony";out.push(`no ${l.toLowerCase()} (${wants} it)`)}}
+  if((p.kinds||[]).length&&!p.kinds.includes(a.kind||"apartment"))out.push(`not a type ${wants}`);
+  if((p.plans||[]).length&&!p.plans.some(x=>x==="shared"?a.plans.some(isShared):x==="5x5"?a.plans.some(y=>/^[5-9]x/.test(y)):a.plans.includes(x)))out.push(`no floor plan ${wants}`);
+  if((p.hoods||[]).length&&!p.hoods.includes(a.neighborhood))out.push(`not in a neighborhood ${wants}`);
+  if(p.minRating&&a.rating!=null&&a.rating<p.minRating)out.push(`rated under ${p.minRating}★`);
+  return out}
+function autoReason(f,id){const a=APTS.find(y=>y.id===id);if(!a)return null;const r=[];for(const P of fPrefs(f)){if(P.prefs)r.push(...prefMisses(a,P.prefs,P.name))}return r.length?r.slice(0,2).join(" · ")+(r.length>2?` +${r.length-2} more`:""):null}
 function fGroups(f){const x=folders[f];const ids=folderIds(f).filter(id=>APTS.some(a=>a.id===id));const V=x.votes||{},S=x.status||{};const ppl=fPeople(f);
   const g=[{k:"all",l:"All",ids}];
   if(ppl.length>1)g.push({k:"everyone",l:"Everyone likes",ids:ids.filter(id=>{const v=V[id];return v&&v.up.length>=ppl.length&&!v.down.length})});
@@ -826,13 +838,16 @@ function decorateRows(f){if(!sharedish(f))return;const x=folders[f];
   const maxes=fPrefs(f).map(p=>p.prefs&&p.prefs.max).filter(v=>typeof v==="number"&&v>0);const a0=APTS.find(y=>y.id===id),pr0=a0?(a0.own!=null?a0.own:PR(a0)):null;
   if(maxes.length&&pr0!=null){const n=maxes.filter(m=>pr0<=m).length;const fb=document.createElement("span");fb.className="fitb"+(n===maxes.length?" all":n===0?" none":"");fb.textContent=n===maxes.length?`Fits everyone's budget`:`Fits ${n} of ${maxes.length} budgets`;rt.appendChild(fb)}
   const fl=(x.flags||{})[id];
-  if(foldFilter==="del"){const why=delReason(f,id);if(why){const w=document.createElement("div");w.className="fwhy";w.textContent=why;rt.appendChild(w)}if(fl){const k=document.createElement("button");k.type="button";k.className="sb";k.dataset.fflag=id;k.dataset.on="0";k.textContent="Keep it";bar.appendChild(k)}const del=document.createElement("button");del.type="button";del.className="vdel";del.dataset.fdel=id;del.textContent="Delete";bar.appendChild(del)}
+  if(foldFilter==="del"){const di=delInfo(f,id);if(di){const w=document.createElement("div");w.className="fwhy";w.textContent=di.text;rt.appendChild(w);
+      if(di.mine){const k=document.createElement("button");k.type="button";k.className="sb";k.dataset.fkeep=id;k.dataset.kt=di.type;k.textContent="Keep it";bar.appendChild(k);const del=document.createElement("button");del.type="button";del.className="vdel";del.dataset.fdel=id;del.textContent="Delete";bar.appendChild(del)}
+      else{const o=document.createElement("span");o.className="fonly";o.textContent=`Only ${di.who.join(" or ")} can keep or delete this`;bar.appendChild(o)}}}
   else if(!fl){const mv=document.createElement("button");mv.type="button";mv.className="sb mv";mv.dataset.fflag=id;mv.dataset.on="1";mv.textContent="Maybe delete";bar.appendChild(mv)}
   rt.appendChild(bar)})}
-$("#list").addEventListener("click",async e=>{const b=e.target.closest("[data-vote],[data-stat],[data-fdel],[data-fflag],[data-fadd]");if(!b||!openFolder)return;e.stopPropagation();e.preventDefault();const f=openFolder,x=folders[f];
+$("#list").addEventListener("click",async e=>{const b=e.target.closest("[data-vote],[data-stat],[data-fdel],[data-fflag],[data-fadd],[data-fkeep]");if(!b||!openFolder)return;e.stopPropagation();e.preventDefault();const f=openFolder,x=folders[f];
   try{if(b.dataset.vote){const id=b.dataset.vid,cur=((x.votes||{})[id]||{}).mine||0,v=+b.dataset.vote;await window.FAH_NOTES.vote(f,id,cur===v?0:v)}
     else if(b.dataset.stat){const id=b.dataset.stat,cur=(x.status||{})[id]||"";const nx=cur===""?"toured":cur==="toured"?"applied":"";if(nx==="toured"){openTour(f,id);return}await window.FAH_NOTES.status(f,id,nx)}
     else if(b.dataset.fflag){await window.FAH_NOTES.flag(f,b.dataset.fflag,b.dataset.on==="1")}
+    else if(b.dataset.fkeep){const id=b.dataset.fkeep,t=b.dataset.kt;if(t==="down")await window.FAH_NOTES.vote(f,id,0);else if(t==="flag")await window.FAH_NOTES.flag(f,id,false);else await window.FAH_NOTES.keep(f,id)}
     else if(b.dataset.fadd){const id=b.dataset.fadd;if(!x.ids.includes(id)){x.ids=[...x.ids,id];writeFolder(f)}folderMsg="Added to "+x.name+".";renderList();buildPins()}
     else if(b.dataset.fdel){const id=b.dataset.fdel;x.ids=x.ids.filter(i=>i!==id);writeFolder(f);renderList();buildPins()}}catch(err){folderMsg="Couldn't save that. Try again.";renderList()}},true);
 function openTour(f,id){const a=APTS.find(y=>y.id===id);if(!a)return;let d=$("#tourDlg");if(!d){d=document.createElement("div");d.id="tourDlg";document.body.appendChild(d)}let v=0;
