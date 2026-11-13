@@ -421,7 +421,7 @@ mapEl.addEventListener("dblclick",e=>{if(e.target.closest(".pin"))return;const r
 $("#zin").onclick=()=>{const r=mapEl.getBoundingClientRect();zoomAt(1.6,r.width/2,r.height/2)};
 $("#zout").onclick=()=>{const r=mapEl.getBoundingClientRect();zoomAt(1/1.6,r.width/2,r.height/2)};
 $("#home").onclick=()=>fitBounds(-97.7560,30.2770,-97.7240,30.3000);
-$("#all").onclick=()=>fitBounds(-97.845,30.185,-97.640,30.392);
+$("#all").onclick=()=>fitBounds(-97.7625,30.2562,-97.7065,30.3074);
 $("#rings").onclick=()=>{S.rings=!S.rings;saveFilters();$("#rings").setAttribute("aria-pressed",S.rings);placeRings()};
 
 /* ---------- Draw base map ---------- */
