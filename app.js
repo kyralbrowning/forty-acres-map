@@ -808,6 +808,8 @@ function fGroups(f){const x=folders[f];const ids=folderIds(f).filter(id=>APTS.so
   const g=[{k:"all",l:"All",ids}];
   if(ppl.length>1)g.push({k:"everyone",l:"Everyone likes",ids:ids.filter(id=>{const v=V[id];return v&&v.up.length>=ppl.length&&!v.down.length})});
   for(const n of ppl)g.push({k:"p:"+n,l:n==="You"?"You like":n+" likes",ids:ids.filter(id=>V[id]&&V[id].up.includes(n))});
+  const AB=x.addedBy||{};const adders=[...new Set(ids.map(id=>AB[id]).filter(Boolean))].sort((a,b)=>a==="You"?-1:b==="You"?1:a.localeCompare(b));
+  for(const n of adders)g.push({k:"a:"+n,l:n==="You"?"Added by you":"Added by "+n,ids:ids.filter(id=>AB[id]===n)});
   g.push({k:"toured",l:"Toured",ids:ids.filter(id=>S[id]==="toured")},{k:"applied",l:"Applied",ids:ids.filter(id=>S[id]==="applied")});
   g.push({k:"look",l:"You should look at",ids:shouldLook(f).map(a=>a.id),outside:true});
   g.push({k:"del",l:"Maybe delete",ids:ids.filter(id=>delReason(f,id))});
