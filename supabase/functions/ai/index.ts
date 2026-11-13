@@ -5,7 +5,6 @@ import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
 const GKEY = Deno.env.get("GEMINI_API_KEY") || "";
 const DAILY = Number(Deno.env.get("AI_DAILY_LIMIT") || "25");
 const ADMIN_DAILY = 200;
@@ -97,14 +96,13 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return out({ error: "POST only" }, 405);
   if (!GKEY) return out({ error: "The AI isn't set up yet (missing key)." }, 503);
-  const auth = req.headers.get("Authorization") || "";
-  const userSb = createClient(SB_URL, ANON, { global: { headers: { Authorization: auth } } });
-  const { data: u } = await userSb.auth.getUser();
+  const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  const db = createClient(SB_URL, SERVICE, { auth: { persistSession: false } });
+  const { data: u } = await db.auth.getUser(jwt);
   if (!u?.user) return out({ error: "Please sign in." }, 401);
-  const { data: approved } = await userSb.rpc("is_approved");
-  if (approved !== true) return out({ error: "Your account isn't approved yet." }, 403);
-  const { data: admin } = await userSb.rpc("is_admin");
-  const db = createClient(SB_URL, SERVICE);
+  const { data: mem } = await db.from("members").select("status,is_admin").eq("user_id", u.user.id).maybeSingle();
+  if (mem?.status !== "approved") return out({ error: "Your account isn't approved yet." }, 403);
+  const admin = mem.is_admin === true;
 
   // daily limit
   const day = new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
