@@ -281,16 +281,46 @@ function whyLike(c,b){const r=[];const both=k=>c.tagSet.has(k)&&b.tagSet.has(k);
   for(const k of ["gym","hot_tub","sauna","sundeck","rooftop_deck","game_room","furnished","pet_friendly","roommate_matching"])if(both(k)&&r.length<5)r.push(TAGS[k][0].toLowerCase());
   return r.slice(0,4)}
 let PREFS=(()=>{const p=store("fahm.prefs");return p&&typeof p==="object"?p:null})();let prefsRef=null,prefsEdit=false;
-function prefOK(a){const p=PREFS;if(!p)return true;const pr=PR(a);if(p.max&&(pr==null||pr>p.max))return false;if(p.walk&&dist(a).walk>p.walk)return false;
-  for(const k of p.must||[]){const f=AMEN.find(x=>x[0]===k);if(f&&f[2](a)!==true)return false}if(k_bal(p)&&!balcKind(a))return false;if(p.hoods&&p.hoods.length&&!p.hoods.includes(a.neighborhood))return false;return true}
+let PMETA={welcomed:false,views:{}};
+function prPref(a,room){const r=room||"own";if(r==="shared")return a.shared;if(r==="any")return a.shared!=null&&(a.own==null||a.shared<a.own)?a.shared:a.own;return a.own}
+/* checks: each one says whether a place fits one preference */
+function prefChecks(a,p){const c=[],d=dist(a);
+  if(p.max){const pr=prPref(a,p.room);c.push(pr!=null&&pr<=p.max)}
+  if(p.walk)c.push(d.walk<=p.walk);
+  if(p.drive)c.push(d.drive<=p.drive);
+  for(const k of p.must||[]){const f=AMEN.find(x=>x[0]===k);if(f)c.push(f[2](a)===true);else if(k==="balc")c.push(!!balcKind(a))}
+  if((p.hoods||[]).length)c.push(p.hoods.includes(a.neighborhood));
+  if((p.kinds||[]).length)c.push(p.kinds.includes(a.kind||"apartment"));
+  if((p.plans||[]).length)c.push(p.plans.some(x=>x==="shared"?a.plans.some(isShared):x==="5x5"?a.plans.some(y=>/^[5-9]x/.test(y)):a.plans.includes(x)));
+  if((p.balc||[]).length){const k=balcKind(a);c.push(p.balc.some(b=>b==="any"?k!=null:b===k))}
+  if(p.minRating)c.push(a.rating!=null&&a.rating>=p.minRating);
+  if(p.room==="shared")c.push(a.shared!=null);
+  return c}
+function prefFit(a){if(!PREFS)return 1;const c=prefChecks(a,PREFS);return c.length?c.filter(Boolean).length/c.length:1}
+function prefOK(a){const p=PREFS;if(!p||!p.strict)return true;return prefChecks(a,p).every(Boolean)}
+/* trends: what this person keeps saving and opening (doesn't change their preferences) */
+function trends(){const w=new Map();for(const id of hearts)w.set(id,(w.get(id)||0)+3);
+  for(const [id,n] of Object.entries(PMETA.views||{}))w.set(id,(w.get(id)||0)+Math.min(n,3));
+  const items=[...w].map(([id,k])=>[APTS.find(a=>a.id===id),k]).filter(x=>x[0]);const tot=items.reduce((s,x)=>s+x[1],0);if(items.length<2)return null;
+  const share=f=>items.reduce((s,[a,k])=>s+(f(a)?k:0),0)/tot;
+  const hoods={};items.forEach(([a,k])=>{const h=a.neighborhood||"Other";hoods[h]=(hoods[h]||0)+k});const topH=Object.entries(hoods).sort((x,y)=>y[1]-x[1]).filter(([,k])=>k/tot>=.4).map(([h])=>h).slice(0,2);
+  const prices=items.map(([a])=>a.own).filter(x=>x!=null).sort((x,y)=>x-y);const med=prices.length?prices[Math.floor(prices.length/2)]:null;
+  const am=AMEN.filter(([k,,f])=>share(a=>f(a)===true)>=.6).map(([k,l])=>[k,l]).slice(0,4);
+  const pl={};items.forEach(([a,k])=>(a.plans||[]).forEach(x=>pl[x]=(pl[x]||0)+k));const topP=Object.entries(pl).sort((x,y)=>y[1]-x[1]).filter(([,k])=>k/tot>=.5).map(([x])=>x).slice(0,2);
+  const walks=items.map(([a])=>dist(a).walk).sort((x,y)=>x-y);const mw=walks[Math.floor(walks.length/2)];
+  return{hoods:topH,price:med,am,plans:topP,walk:mw,n:items.length}}
+function trendText(t){return [t.hoods.join(" / "),t.price?"around "+money(t.price):null,t.walk?"~"+t.walk+" min walk":null,...t.am.map(x=>x[1].toLowerCase()),t.plans.join(", ")].filter(Boolean).join(" · ")}
+function trendBonus(a,t){if(!t)return 0;let b=0;if(t.hoods.includes(a.neighborhood))b+=.04;b+=t.am.filter(([k])=>{const f=AMEN.find(x=>x[0]===k);return f&&f[2](a)===true}).length*.015;if(t.price&&a.own!=null)b+=Math.max(0,.04-Math.abs(a.own-t.price)/t.price*.1);return b}
+let viewSave=null;function bumpView(id){const v=PMETA.views||(PMETA.views={});v[id]=(v[id]||0)+1;const keys=Object.keys(v);if(keys.length>150){keys.sort((x,y)=>v[x]-v[y]).slice(0,keys.length-150).forEach(k=>delete v[k])}
+  clearTimeout(viewSave);viewSave=setTimeout(()=>{recCache=null;writePrefs()},3000)}
 function k_bal(p){return (p.must||[]).includes("balc")}
 function recommend(){
   const saved=APTS.filter(a=>hearts.has(a.id));if(!saved.length&&!PREFS)return[];
-  const out=[];for(const c of APTS){if(hearts.has(c.id)||!prefOK(c))continue;let best=0,bestB=null,sum=0;
+  const TR=trends();const out=[];for(const c of APTS){if(hearts.has(c.id)||!prefOK(c))continue;let best=0,bestB=null,sum=0;
     for(const b of saved){const v=sim(c,b);sum+=v;if(v>best){best=v;bestB=b}}
     const pr=PR(c),w=dist(c).walk;let fit=0.5;
-    if(PREFS){const pf=PREFS.max&&pr!=null?Math.max(0,1-Math.abs(PREFS.max*0.9-pr)/PREFS.max):0.5;const wf=1-Math.min(w/Math.max(PREFS.walk||30,10),1);fit=pf*.5+wf*.5}
-    const score=(saved.length?best*.55+(sum/saved.length)*.2:0)+fit*(saved.length?.25:1)+(c.rating?(c.rating-3.5)*.03:0);
+    if(PREFS){const pf=PREFS.max&&pr!=null?Math.max(0,1-Math.abs(PREFS.max*0.9-pr)/PREFS.max):0.5;const wf=1-Math.min(w/Math.max(PREFS.walk||30,10),1);fit=(pf*.5+wf*.5)*.4+prefFit(c)*.6}
+    const score=(saved.length?best*.55+(sum/saved.length)*.2:0)+fit*(saved.length?.25:1)+(c.rating?(c.rating-3.5)*.03:0)+trendBonus(c,TR);
     out.push({a:c,score,because:saved.length?bestB:null})}
   out.sort((x,y)=>y.score-x.score);return out.slice(0,30)}
 function similarTo(a,n){return APTS.filter(c=>c.id!==a.id).map(c=>({c,s:sim(c,a)})).sort((x,y)=>y.s-x.s).slice(0,n)}
@@ -573,7 +603,7 @@ function allAmen(a){const groups={};for(const k of a.tagSet){const [l,g]=TAGS[k]
 function yn(v){return v===true?"y":v===false?"n":"u"}
 function amRow(label,v,extra){const c=yn(v);return `<div class="${c}"><i>${c==="y"?"✓":c==="n"?"✕":"?"}</i><span>${esc(label)}${extra?` <span style="color:var(--fg2)">${esc(extra)}</span>`:""}${c==="u"?' <span style="color:var(--fg3)">(not listed)</span>':""}</span></div>`}
 function bldHero(a){let h="";const seed=[...a.id].reduce((s,c)=>s*31+c.charCodeAt(0)>>>0,7);for(let i=0;i<5;i++){const w=22+((seed>>(i*3))&15),ht=40+((seed>>(i*4))&63);h+=`<i style="width:${w}px;height:${ht}px"></i>`}return h}
-function openCard(id,fromMap){selected=id;tip.hidden=true;renderCard();$("#listView").hidden=true;$("#filters").hidden=true;filtersOpen=false;$("#fToggle").setAttribute("aria-expanded","false");$("#card").hidden=false;$("#scroll").scrollTop=0;
+function openCard(id,fromMap){selected=id;try{bumpView(id)}catch(e){}tip.hidden=true;renderCard();$("#listView").hidden=true;$("#filters").hidden=true;filtersOpen=false;$("#fToggle").setAttribute("aria-expanded","false");$("#card").hidden=false;$("#scroll").scrollTop=0;
   const a=APTS.find(x=>x.id===id);if(!fromMap)centerOn(a.lng,a.lat,Math.max(V.s,1.4));if(innerWidth<=720)$("#panel").classList.remove("min");placePins();}
 function closeCard(){selected=null;$("#card").hidden=true;$("#listView").hidden=false;renderList();placePins()}
 function renderCard(){
@@ -588,7 +618,7 @@ function renderCard(){
     <h2>${esc(a.name)}</h2></div>
   ${gal}
   <div class="cbody">
-    ${a.addedByAI?`<div class="aibadge">✨ Added with AI${a.addedAt?" on "+new Date(a.addedAt).toLocaleDateString():""}. Double-check details on the official site.</div>`:""}
+    ${a.addedByAI?`<div class="aibadge">Added with AI${a.addedAt?" on "+new Date(a.addedAt).toLocaleDateString():""}. Double-check details on the official site.</div>`:""}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:-2px">${ratingHtml(a,true)}${a.ratingUrl?`<a class="linkbtn" style="font-size:12.5px;text-decoration:none" href="${esc(a.ratingUrl)}" target="_blank" rel="noopener">Read reviews</a>`:""}</div>
     <div class="sub">${a.kind==="dorm"?"Dorm · ":a.kind==="house"?"House for rent · ":""}${esc(a.neighborhood)} · ${esc(a.address)}</div>
     <div class="actions" style="grid-template-columns:repeat(4,1fr)">
@@ -774,31 +804,54 @@ $("#card").addEventListener("click",e=>{const t=e.target.closest("[data-fold-tog
 setTimeout(readHash,0);
 /* ---------- "For you" preferences (Kyra, Nov 12) ---------- */
 const PREF_MUST=[["pool","Pool"],["bath","Own bathroom"],["win","Window in every bedroom"],["balc","Balcony"],["furn","Furnished"],["pets","Pet friendly"],["wd","Washer/dryer in unit"],["park","Cheap parking"]];
-function renderPrefs(el){const p=PREFS||{};const editing=prefsEdit||(!PREFS&&!hearts.size);
-  if(!editing){el.innerHTML=`<div class="fbar"><div class="fhead"><b>Your preferences</b><span>${PREFS?esc(prefSummary()):"Not set"}</span></div><div class="frow"><button class="fb pri" id="pEdit">${PREFS?"Edit preferences":"Set preferences"}</button></div><div class="fnote">Picks are ranked by your preferences and the places you heart, and they update whenever new places are added to the map.</div></div>`;return}
+function renderPrefs(el){const p=PREFS||{};const editing=prefsEdit||(!PREFS&&!hearts.size);const t=trends();
+  const trendHtml=t?`<div class="ptrend"><b>What you've been liking</b><span>${esc(trendText(t))}</span><i>From your saves and the places you open. This doesn't change your preferences.</i></div>`:"";
+  if(!editing){el.innerHTML=`<div class="fbar"><div class="fhead"><b>Your preferences</b><span>${PREFS?esc(prefSummary()):"Not set"}</span></div>${PREFS?`<div class="fnote">${PREFS.strict?"Only showing places that match.":"Used as a guide. Places that don't match can still show up."}</div>`:""}<div class="frow"><button class="fb pri" id="pEdit">${PREFS?"Edit preferences":"Set preferences"}</button></div>${trendHtml}<div class="fnote">Picks are ranked by your preferences, the places you save, and what you've been looking at.</div></div>`;return}
   const chips=(arr,key,sel)=>arr.map(([k,l])=>`<button class="chip" aria-pressed="${sel.includes(k)}" data-p${key}="${esc(k)}">${esc(l)}</button>`).join("");
-  el.innerHTML=`<div class="fbar"><div class="fhead"><b>What are you looking for?</b><span>Used to pick places for you</span></div>
-   <div class="fnote">Max price for your own bedroom: <b id="pMaxO">${p.max?money(p.max):"Any"}</b></div><input type="range" id="pMax" min="600" max="2100" step="50" value="${p.max||2100}" >
-   <div class="fnote">Max walk to campus: <b id="pWalkO">${p.walk?p.walk+" min":"Any"}</b></div><input type="range" id="pWalk" min="5" max="60" step="5" value="${p.walk||60}" >
-   <div class="fnote">Must have</div><div class="chips">${chips(PREF_MUST,"m",p.must||[])}</div>
-   <div class="fnote">Neighborhoods (optional)</div><div class="chips">${chips(HOODS.map(h=>[h,h]),"h",p.hoods||[])}</div>
-   <div class="frow"><button class="fb pri" id="pSave">Show my picks</button>${PREFS?'<button class="fb" id="pClear">Clear preferences</button>':""}${PREFS?'<button class="fb" id="pCancel">Cancel</button>':""}</div>
-   <div class="fnote">Saved ${prefsRef?"to your Claude account":"in this browser"}. You can also heart places; picks use both.</div></div>`;
-  el._draft={max:p.max||null,walk:p.walk||null,must:[...(p.must||[])],hoods:[...(p.hoods||[])]};}
-function prefSummary(){const p=PREFS;return [p.max?"up to "+money(p.max):null,p.walk?"≤"+p.walk+" min walk":null,...(p.must||[]).map(k=>(PREF_MUST.find(x=>x[0]===k)||[,k])[1].toLowerCase()),(p.hoods||[]).length?p.hoods.join(", "):null].filter(Boolean).join(" · ")||"anything"}
-function savePrefs(p){PREFS=p;store("fahm.prefs",p);if(prefsRef)prefsRef.set(Object.assign({},p||{cleared:true},{updatedAt:Date.now()})).catch(()=>{});recCache=null;renderList();buildPins()}
+  const one=(arr,key,v)=>arr.map(([k,l])=>`<button class="chip" aria-pressed="${String(v)===String(k)}" data-p${key}="${esc(k)}">${esc(l)}</button>`).join("");
+  const MUST=[...AMEN.map(([k,l])=>[k,l]),["balc","Balcony"]];
+  el.innerHTML=`<div class="fbar pform"><div class="fhead"><b>Your preferences</b><span>Saved to your account</span></div>
+   <label class="ptog"><input type="checkbox" id="pStrict" ${p.strict?"checked":""}><span><b>Only show places that match</b><i>Off: your preferences are a guide, and other good places can still show up.</i></span></label>
+   <div class="fnote">Type</div><div class="chips">${chips([["apartment","Apartments"],["dorm","Dorms"],["house","Houses"]],"k",p.kinds||[])}</div>
+   <div class="fnote">Bedroom</div><div class="chips">${one([["own","My own bedroom"],["shared","Shared bedroom"],["any","Either"]],"r",p.room||"own")}</div>
+   <div class="fnote">Max price: <b id="pMaxO">${p.max?money(p.max):"Any"}</b></div><input type="range" id="pMax" min="600" max="2100" step="50" value="${p.max||2100}">
+   <div class="fnote">Max walk to campus: <b id="pWalkO">${p.walk?p.walk+" min":"Any"}</b></div><input type="range" id="pWalk" min="5" max="60" step="5" value="${p.walk||60}">
+   <div class="fnote">Max drive to campus: <b id="pDriveO">${p.drive?p.drive+" min":"Any"}</b></div><input type="range" id="pDrive" min="5" max="30" step="5" value="${p.drive||30}">
+   <div class="fnote">Floor plans</div><div class="chips">${chips(PLAN_CHIPS,"pl",p.plans||[])}</div>
+   <div class="fnote">Must have</div><div class="chips">${chips(MUST,"m",p.must||[])}</div>
+   <div class="fnote">Balcony</div><div class="chips">${chips(BALC_FILTERS,"b",p.balc||[])}</div>
+   <div class="fnote">Rating</div><div class="chips">${one([[0,"Any"],[3.5,"3.5+ ★"],[4,"4.0+ ★"],[4.5,"4.5+ ★"]],"rt",p.minRating||0)}</div>
+   <div class="fnote">Neighborhoods</div><div class="chips">${chips(HOODS.map(h=>[h,h]),"h",p.hoods||[])}</div>
+   <div class="frow"><button class="fb pri" id="pSave">Save and show my picks</button>${PREFS?'<button class="fb" id="pCancel">Cancel</button><button class="fb" id="pClear">Clear</button>':""}</div>
+   ${trendHtml}</div>`;
+  el._draft={max:p.max||null,walk:p.walk||null,drive:p.drive||null,must:[...(p.must||[])],hoods:[...(p.hoods||[])],kinds:[...(p.kinds||[])],room:p.room||"own",plans:[...(p.plans||[])],balc:[...(p.balc||[])],minRating:p.minRating||0,strict:!!p.strict};}
+function prefSummary(){const p=PREFS;const L=(arr,ks)=>(ks||[]).map(k=>(arr.find(x=>String(x[0])===String(k))||[,k])[1]);return [...L([["apartment","Apartments"],["dorm","Dorms"],["house","Houses"]],p.kinds),p.room==="shared"?"shared bedroom":null,p.max?"up to "+money(p.max):null,p.walk?"≤"+p.walk+" min walk":null,p.drive?"≤"+p.drive+" min drive":null,...L(PLAN_CHIPS,p.plans),p.minRating?p.minRating+"+ ★":null,...L(BALC_FILTERS,p.balc).map(x=>x.toLowerCase()),...(p.must||[]).map(k=>((AMEN.find(x=>x[0]===k)||PREF_MUST.find(x=>x[0]===k)||[,k])[1]).toLowerCase()),(p.hoods||[]).length?p.hoods.join(", "):null].filter(Boolean).join(" · ")||"anything"}
+function writePrefs(){if(prefsRef)prefsRef.set(Object.assign({},PREFS||{cleared:true},{meta:PMETA,updatedAt:Date.now()})).catch(()=>{})}
+function savePrefs(p){PREFS=p;store("fahm.prefs",p);writePrefs();recCache=null;renderList();buildPins()}
 $("#listView").addEventListener("input",e=>{const el=$("#fold");if(!el||!el._draft)return;if(e.target.id==="pMax"){const v=+e.target.value;el._draft.max=v>=2100?null:v;$("#pMaxO").textContent=v>=2100?"Any":money(v)}
-  if(e.target.id==="pWalk"){const v=+e.target.value;el._draft.walk=v>=60?null:v;$("#pWalkO").textContent=v>=60?"Any":v+" min"}});
+  if(e.target.id==="pWalk"){const v=+e.target.value;el._draft.walk=v>=60?null:v;$("#pWalkO").textContent=v>=60?"Any":v+" min"}
+  if(e.target.id==="pDrive"){const v=+e.target.value;el._draft.drive=v>=30?null:v;$("#pDriveO").textContent=v>=30?"Any":v+" min"}
+  if(e.target.id==="pStrict")el._draft.strict=e.target.checked});
 $("#listView").addEventListener("click",e=>{const t=e.target.closest("button");if(!t||!t.closest("#fold")||tab!=="for")return;const el=$("#fold");
   if(t.id==="pEdit"){prefsEdit=true;renderList();return}
   if(t.id==="pCancel"){prefsEdit=false;renderList();return}
   if(t.id==="pClear"){prefsEdit=false;savePrefs(null);return}
-  if(t.id==="pSave"&&el._draft){prefsEdit=false;savePrefs(el._draft);return}
+  if(t.id==="pSave"&&el._draft){prefsEdit=false;PMETA.welcomed=true;savePrefs(el._draft);$("#scroll").scrollTop=0;return}
   const d=el._draft;if(!d)return;
   if(t.dataset.pm){d.must=d.must.includes(t.dataset.pm)?d.must.filter(x=>x!==t.dataset.pm):[...d.must,t.dataset.pm];t.setAttribute("aria-pressed",d.must.includes(t.dataset.pm))}
+  const tg=(f,v)=>{d[f]=d[f].includes(v)?d[f].filter(x=>x!==v):[...d[f],v];t.setAttribute("aria-pressed",d[f].includes(v))};
+  if(t.dataset.pk)tg("kinds",t.dataset.pk);if(t.dataset.ppl)tg("plans",t.dataset.ppl);if(t.dataset.pb)tg("balc",t.dataset.pb);
+  if(t.dataset.pr){d.room=t.dataset.pr;t.parentNode.querySelectorAll("[data-pr]").forEach(b=>b.setAttribute("aria-pressed",b===t))}
+  if(t.dataset.prt!=null){d.minRating=+t.dataset.prt;t.parentNode.querySelectorAll("[data-prt]").forEach(b=>b.setAttribute("aria-pressed",b===t))}
   if(t.dataset.ph){d.hoods=d.hoods.includes(t.dataset.ph)?d.hoods.filter(x=>x!==t.dataset.ph):[...d.hoods,t.dataset.ph];t.setAttribute("aria-pressed",d.hoods.includes(t.dataset.ph))}});
 (async()=>{try{if(!window.claude||!window.claude.use)return;const [db,user]=await Promise.all([window.claude.use("db"),window.claude.use("user")]);if(!db||!user)return;const uid=await user.id();if(!uid)return;
-  prefsRef=db.doc("data/users/"+uid+"/prefs");let first=true;prefsRef.onSnapshot(sn=>{if(sn.exists){const d=sn.data()||{};if(d.cleared){PREFS=null}else{PREFS={max:d.max||null,walk:d.walk||null,must:Array.isArray(d.must)?d.must:[],hoods:Array.isArray(d.hoods)?d.hoods:[]}}store("fahm.prefs",PREFS)}
-    else if(first&&PREFS){prefsRef.set(Object.assign({},PREFS,{updatedAt:Date.now()})).catch(()=>{})}first=false;recCache=null;if(tab==="for")renderList()},()=>{})}catch(e){}})();
+  prefsRef=db.doc("data/users/"+uid+"/prefs");let first=true;prefsRef.onSnapshot(sn=>{if(sn.exists){const d=sn.data()||{};const A_=x=>Array.isArray(x)?x:[];if(d.meta&&typeof d.meta==="object")PMETA={welcomed:!!d.meta.welcomed,views:d.meta.views&&typeof d.meta.views==="object"?d.meta.views:{}};
+      if(d.cleared){PREFS=null}else{PREFS={max:d.max||null,walk:d.walk||null,drive:d.drive||null,must:A_(d.must),hoods:A_(d.hoods),kinds:A_(d.kinds),room:d.room||"own",plans:A_(d.plans),balc:A_(d.balc),minRating:d.minRating||0,strict:!!d.strict}}store("fahm.prefs",PREFS)}
+    else if(first&&PREFS){prefsRef.set(Object.assign({},PREFS,{updatedAt:Date.now()})).catch(()=>{})}if(first)setTimeout(maybeWelcome,900);first=false;recCache=null;if(tab==="for")renderList()},()=>{})}catch(e){}})();
+function maybeWelcome(){if(PREFS||PMETA.welcomed||document.getElementById("welc"))return;const d=document.createElement("div");d.id="welc";
+  d.innerHTML=`<div class="wbox" role="dialog" aria-label="Welcome"><b>You're in</b><p>Save your preferences to get better picks in <b>For you</b>, like price, walk time, floor plan and must-haves.</p><p class="wsub">They don't have to limit what you see. You choose whether they're a guide or a filter.</p><div class="wbtns"><button type="button" class="fb pri" id="wGo">Set my preferences</button><button type="button" class="fb" id="wLater">Maybe later</button></div></div>`;
+  document.body.appendChild(d);const done=()=>{PMETA.welcomed=true;writePrefs();d.remove()};
+  d.querySelector("#wLater").onclick=done;d.addEventListener("click",e=>{if(e.target===d)done()});
+  d.querySelector("#wGo").onclick=()=>{done();prefsEdit=true;setTab("for");const P=$("#panel");if(P)P.classList.remove("min");$("#scroll").scrollTop=0}}
 
 

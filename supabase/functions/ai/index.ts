@@ -114,6 +114,23 @@ Deno.serve(async (req) => {
   const admin = mem.is_admin === true;
 
   let body: any = {}; try { body = await req.json(); } catch { /* */ }
+  if (body.action === "approve") {
+    if (!admin) return out({ error: "Only the owner can approve accounts." }, 403);
+    const target = String(body.target || "");
+    const { data: m } = await db.from("members").update({ status: "approved", decided_at: new Date().toISOString() }).eq("user_id", target).select("email").maybeSingle();
+    if (!m) return out({ ok: false, error: "Account not found." }, 404);
+    // Send a sign-in link by email (uses the "Magic Link" email template).
+    const { error } = await db.auth.signInWithOtp({ email: m.email, options: { shouldCreateUser: false, emailRedirectTo: "https://kyralbrowning.github.io/forty-acres-map/" } });
+    if (error) console.error("approve email:", error.message);
+    return out({ ok: true, emailed: !error });
+  }
+  if (body.action === "title") {
+    const q = String(body.q || "").slice(0, 400), a = String(body.a || "").slice(0, 600);
+    try {
+      const r = await gemini([{ role: "user", parts: [{ text: `Write a short title (2 to 5 words) for this chat about student housing near UT Austin. Make it specific and meaningful, like "Cheap 4x4s with pools" or "Comparing Rambler and Lark". No quotes, no emojis, no ending period.\n\nQuestion: ${q}\nAnswer: ${a}` }] }]);
+      return out({ title: r.text.replace(/["*#]/g, "").split("\n")[0].trim().slice(0, 60) });
+    } catch { return out({ title: "" }); }
+  }
   if (body.action === "caps") { try { return out({ search: await canSearch() }); } catch { return out({ search: false }); } }
 
   // daily limit
