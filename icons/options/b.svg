@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<rect width="512" height="512" fill="#bf5700"/>
+<path d="M132 250L256 148l124 102" stroke="#fff" stroke-width="30" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
+<text x="256" y="388" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="170" fill="#fff" letter-spacing="-4">40</text>
+</svg>
