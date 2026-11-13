@@ -396,7 +396,12 @@ window.claude={use:async n=>{if(n==="db"){if(!dbP)dbP=makeDb();return dbP}if(n==
 window.FAH_AUTH={sb,ready,
   saveHash(){try{if(location.hash&&/^#folder-/.test(location.hash))localStorage.setItem("fah.returnHash",location.hash)}catch(e){}},
   async signIn(email,password){const r=await sb.auth.signInWithPassword({email,password});return r.error?r.error.message:null},
-  async signUp(email,password){this.saveHash();const r=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname}});if(r.error)return{err:r.error.message};return{needsConfirm:!r.data.session}},
+  async signUp(email,password,note){this.saveHash();const r=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname,data:{note:String(note||"").trim().slice(0,50)}}});if(r.error)return{err:r.error.message};return{needsConfirm:!r.data.session}},
+  isAdmin:false,
+  status:ready.then(async s=>{if(!s)return null;try{const r=await sb.rpc("my_status");return r.error?"pending":r.data}catch(e){return "pending"}}),
+  async checkAdmin(){try{const r=await sb.rpc("is_admin");this.isAdmin=!r.error&&r.data===true}catch(e){this.isAdmin=false}return this.isAdmin},
+  async listMembers(){const r=await sb.rpc("list_members");if(r.error)throw r.error;return r.data||[]},
+  async setStatus(id,st){const r=await sb.rpc("set_member_status",{target:id,new_status:st});if(r.error)throw r.error},
   async reset(email){this.saveHash();const r=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});return r.error?r.error.message:null},
   async setPassword(password){const r=await sb.auth.updateUser({password});return r.error?r.error.message:null},
   async signOut(){await sb.auth.signOut();location.reload()}};
@@ -407,7 +412,7 @@ ready.then(s=>{try{const h=localStorage.getItem("fah.returnHash");if(s&&h&&!loca
 </script>
 <script>
 /* Load the place list from the private database only after sign-in, then start the map. */
-window.FAH_AUTH.ready.then(async s=>{if(!s)return;
+window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
   const sb=window.SB,all=[];
   try{for(let from=0;;from+=1000){const {data,error}=await sb.from("places").select("data").order("ord",{ascending:true,nullsFirst:false}).order("id").range(from,from+999);
       if(error)throw error;all.push(...data.map(r=>r.data));if(data.length<1000)break}}
@@ -424,10 +429,13 @@ window.FAH_AUTH.ready.then(async s=>{if(!s)return;
     <form id="gForm" autocomplete="on">
       <input id="gEmail" type="email" placeholder="Email" autocomplete="email" required>
       <input id="gPass" type="password" placeholder="Password (8+ characters)" autocomplete="current-password" minlength="8">
+      <input id="gNote" type="text" maxlength="50" placeholder="Message for the owner (optional)" autocomplete="off" hidden>
+      <div class="gcount" id="gCount" hidden>0/50</div>
       <button type="submit" id="gGo">Sign in</button>
     </form>
     <div class="gmsg" id="gMsg" role="status"></div>
-    <div class="glinks"><button class="glink" id="gSwap">New here? Create an account</button><button class="glink" id="gForgot">Forgot password?</button></div>
+    <div class="gwait" id="gWait" hidden><button type="button" id="gAgain">Check again</button><button type="button" class="glink" id="gOut">Sign out</button></div>
+    <div class="glinks" id="glinks"><button class="glink" id="gSwap">New here? Create an account</button><button class="glink" id="gForgot">Forgot password?</button></div>
   </div>
 </div>
 <style>
@@ -445,27 +453,56 @@ window.FAH_AUTH.ready.then(async s=>{if(!s)return;
 .gmsg{font-size:13px;min-height:18px;margin-top:10px;line-height:1.4}.gmsg.err{color:#c0392b}.gmsg.ok{color:#2c8a6b}
 .glinks{display:flex;justify-content:space-between;gap:8px;margin-top:8px;flex-wrap:wrap}
 .glink{border:0;background:none;color:#bf5700;font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:4px 0}
+#appr{position:fixed;inset:0;z-index:5500;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}#appr[hidden]{display:none}
+.abox{background:#fff;color:#2b2522;border-radius:18px;width:100%;max-width:440px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.ahead{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #eee3d8;font-size:16px}.ahead button{border:0;background:none;font-size:18px;cursor:pointer;color:inherit}
+.alist{overflow:auto;padding:6px 16px 14px}.arow{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f1e8df}
+.aem{font-weight:600;font-size:14px;word-break:break-all}.anote{font-size:13.5px;margin-top:2px}.anote.none{color:#9a8f86}.ameta{font-size:12px;color:#7a6f66;margin-top:2px}.anone{padding:18px 0;color:#7a6f66;font-size:14px}
+.abtns{display:flex;flex-direction:column;gap:6px}.abtns button{font:inherit;font-size:13px;font-weight:600;padding:7px 12px;border-radius:9px;border:1px solid #ddd2c7;background:#fff;color:#2b2522;cursor:pointer;white-space:nowrap}.abtns button.ok{background:#bf5700;border-color:#bf5700;color:#fff}
+@media (prefers-color-scheme:dark){.abox,.abtns button{background:#26221f;color:#f3ede6}.abtns button{border-color:#4a423b}.ahead,.arow{border-color:#3a332d}}
+.gcount{font-size:11.5px;color:#9a8f86;text-align:right;margin-top:-6px}.gcount[hidden]{display:none}
+.gwait{display:flex;flex-direction:column;gap:8px;align-items:center}.gwait[hidden]{display:none}#gAgain{font:inherit;font-size:15px;font-weight:650;padding:11px;border:0;border-radius:11px;background:#bf5700;color:#fff;cursor:pointer;width:100%}#gAgain[hidden]{display:none}
+#gForm[hidden],.glinks[hidden]{display:none}
 #acct{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--fg2);margin-top:2px}#acct button{border:0;background:none;color:var(--accent);font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;padding:0}
 </style>
 <script>
 (function(){
 const A=window.FAH_AUTH,g=document.getElementById("gate"),$g=id=>document.getElementById(id);let mode="in";
-function show(m){mode=m;g.hidden=false;const map={in:["Sign in to see the map, your saves and shared folders.","Sign in","New here? Create an account"],up:["Make a free account. Your saves stay private to you.","Create account","Have an account? Sign in"],reset:["Enter your email and we'll send a reset link.","Send reset link","Back to sign in"],newpw:["Choose a new password.","Save password",""]}[m];
+function show(m){mode=m;g.hidden=false;const map={in:["Sign in to see the map, your saves and shared folders.","Sign in","New here? Create an account"],up:["Make an account. The site owner approves new accounts before they can see the map.","Continue","Have an account? Sign in"],reset:["Enter your email and we'll send a reset link.","Send reset link","Back to sign in"],newpw:["Choose a new password.","Save password",""]}[m];
   $g("gSub").textContent=map[0];$g("gGo").textContent=map[1];$g("gSwap").textContent=map[2];$g("gSwap").hidden=!map[2];$g("gForgot").hidden=m!=="in";
-  $g("gPass").hidden=m==="reset";$g("gEmail").hidden=m==="newpw";$g("gPass").autocomplete=m==="in"?"current-password":"new-password";$g("gMsg").textContent="";$g("gMsg").className="gmsg";
-  if(/^#folder-/.test(location.hash)&&m==="in")$g("gSub").textContent="Someone shared a folder with you. Sign in or create a free account to open it."}
+  $g("gPass").hidden=m==="reset";$g("gNote").hidden=m!=="up";$g("gCount").hidden=m!=="up";$g("gForm").hidden=false;$g("gWait").hidden=true;$g("glinks").hidden=false;$g("gEmail").hidden=m==="newpw";$g("gPass").autocomplete=m==="in"?"current-password":"new-password";$g("gMsg").textContent="";$g("gMsg").className="gmsg";
+  if(/^#folder-/.test(location.hash)&&m==="in")$g("gSub").textContent="Someone shared a folder with you. Sign in or make an account to open it."}
+function wait(denied){g.hidden=false;$g("gForm").hidden=true;$g("glinks").hidden=true;$g("gWait").hidden=false;$g("gMsg").textContent="";
+  $g("gSub").textContent=denied?"This account wasn't approved, so it can't open the map.":"Your account needs to be approved before you can see the map. Check back soon.";$g("gAgain").hidden=!!denied}
+$g("gAgain").onclick=()=>location.reload();$g("gOut").onclick=()=>A.signOut();
+$g("gNote").oninput=()=>{$g("gCount").textContent=$g("gNote").value.length+"/50"};
 function msg(t,ok){$g("gMsg").textContent=t;$g("gMsg").className="gmsg "+(ok?"ok":"err")}
 $g("gSwap").onclick=()=>show(mode==="in"?"up":"in");$g("gForgot").onclick=()=>show("reset");
 $g("gForm").onsubmit=async e=>{e.preventDefault();const em=$g("gEmail").value.trim(),pw=$g("gPass").value;$g("gGo").disabled=true;
   try{if(mode==="in"){if(!pw){msg("Enter your password.");return}const err=await A.signIn(em,pw);if(err){msg(err==="Invalid login credentials"?"That email and password don't match.":err);return}A.saveHash();location.reload()}
-   else if(mode==="up"){if(pw.length<8){msg("Use at least 8 characters.");return}const r=await A.signUp(em,pw);if(r.err){msg(r.err);return}if(r.needsConfirm)msg("Almost done: check your email and tap the confirm link, then come back and sign in.",true);else location.reload()}
+   else if(mode==="up"){if(pw.length<8){msg("Use at least 8 characters.");return}const r=await A.signUp(em,pw,$g("gNote").value);if(r.err){msg(r.err);return}if(r.needsConfirm){wait(false);msg("Check your email and tap the confirm link. Then your account needs to be approved before you can see the map.",true);$g("gAgain").hidden=true}else location.reload()}
    else if(mode==="reset"){const err=await A.reset(em);if(err){msg(err);return}msg("If that email has an account, a reset link is on its way.",true)}
    else if(mode==="newpw"){if(pw.length<8){msg("Use at least 8 characters.");return}const err=await A.setPassword(pw);if(err){msg(err);return}location.replace(location.pathname)}}
   finally{$g("gGo").disabled=false}};
 A.sb.auth.onAuthStateChange(ev=>{if(ev==="PASSWORD_RECOVERY")show("newpw")});
-A.ready.then(s=>{if(!s){show("in");return}
-  const ph=document.querySelector(".ph .brand>div:last-child")||document.querySelector(".ph");if(ph){const d=document.createElement("div");d.id="acct";d.innerHTML=`<span></span> · <button type="button" id="acctShare">Share site</button> · <button type="button" id="acctOut">Sign out</button>`;d.firstChild.textContent=s.user.email;d.querySelector("#acctOut").onclick=()=>A.signOut();
-  d.querySelector("#acctShare").onclick=async e=>{const b=e.currentTarget,url=window.FAH_SITE||(location.origin+location.pathname);try{if(navigator.share&&/Mobi/i.test(navigator.userAgent)){await navigator.share({title:"Forty Acres Housing Map",url});return}await navigator.clipboard.writeText(url);b.textContent="Link copied"}catch(x){prompt("Copy this link:",url)}setTimeout(()=>b.textContent="Share site",2000)};ph.appendChild(d)}});
+A.ready.then(async s=>{if(!s){show("in");return}
+  const st=await A.status;if(st!=="approved"){wait(st==="denied");return}
+  const admin=await A.checkAdmin();
+  const ph=document.querySelector(".ph .brand>div:last-child")||document.querySelector(".ph");if(ph){const d=document.createElement("div");d.id="acct";
+  d.innerHTML=`<span></span>${admin?' · <button type="button" id="acctAppr">Approve people</button> · <button type="button" id="acctShare">Share site</button>':""} · <button type="button" id="acctOut">Sign out</button>`;d.firstChild.textContent=s.user.email;d.querySelector("#acctOut").onclick=()=>A.signOut();
+  if(admin){d.querySelector("#acctShare").onclick=async e=>{const b=e.currentTarget,url=window.FAH_SITE||(location.origin+location.pathname);try{await navigator.clipboard.writeText(url);b.textContent="Link copied"}catch(x){prompt("Copy this link:",url)}setTimeout(()=>b.textContent="Share site",2000)};
+    const ab=d.querySelector("#acctAppr");ab.onclick=openAppr;
+    A.listMembers().then(ms=>{const n=ms.filter(m=>m.status==="pending").length;if(n)ab.textContent="Approve people ("+n+")"}).catch(()=>{})}
+  ph.appendChild(d)}});
+function esc(t){return String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c])}
+async function openAppr(){let p=$g("appr");if(!p){p=document.createElement("div");p.id="appr";document.body.appendChild(p);
+    p.addEventListener("click",async e=>{if(e.target===p||e.target.id==="apprX"){p.hidden=true;return}const b=e.target.closest("button[data-id]");if(!b)return;b.disabled=true;
+      try{await A.setStatus(b.dataset.id,b.dataset.st)}catch(x){alert("Couldn't save that. Try again.")}fill()})}
+  p.hidden=false;fill()}
+async function fill(){const p=$g("appr");p.innerHTML='<div class="abox"><div class="ahead"><b>Approve people</b><button id="apprX" aria-label="Close">✕</button></div><div class="alist">Loading…</div></div>';
+  let ms;try{ms=await A.listMembers()}catch(x){p.querySelector(".alist").textContent="Couldn't load accounts.";return}
+  const lbl={pending:"Waiting",approved:"Approved",denied:"Denied"},n=ms.filter(m=>m.status==="pending").length,ab=$g("acctAppr");if(ab)ab.textContent="Approve people"+(n?" ("+n+")":"");
+  p.querySelector(".alist").innerHTML=ms.filter(m=>!m.is_admin).map(m=>`<div class="arow"><div class="ainfo"><div class="aem">${esc(m.email)}</div>${m.note?`<div class="anote">“${esc(m.note)}”</div>`:'<div class="anote none">No message</div>'}<div class="ameta">${lbl[m.status]||m.status} · ${new Date(m.created_at).toLocaleDateString()}</div></div><div class="abtns">${m.status!=="approved"?`<button class="ok" data-id="${m.user_id}" data-st="approved">Approve</button>`:""}${m.status==="pending"?`<button data-id="${m.user_id}" data-st="denied">Deny</button>`:""}${m.status==="approved"?`<button data-id="${m.user_id}" data-st="denied">Remove access</button>`:""}</div></div>`).join("")||'<div class="anone">No one has signed up yet.</div>'}
 })();
 </script>
 
