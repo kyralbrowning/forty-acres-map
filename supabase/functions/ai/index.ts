@@ -173,7 +173,7 @@ async function allPlaces(db: any) {
 const yn = (v: any) => v === true ? "yes" : v === false ? "no" : v == null ? "?" : String(v);
 function line(p: any) {
   const t = p.lat && p.lng ? times(edgeMiles(p.lng, p.lat)) : null;
-  return `${p.name} | ${p.kind || "apartment"} | ${p.neighborhood || ""} | ${p.priceMin ? "$" + p.priceMin + (p.priceMax && p.priceMax !== p.priceMin ? "-" + p.priceMax : "") : "price ?"} | walk ${t ? t.walk + " min" : "?"} | pool ${yn(p.pool)} | own bath ${yn(p.privateBath)} | balcony ${yn(p.balcony)} | windows every bedroom ${yn(p.windowsEveryBedroom)} | plans ${(p.plans || []).join(",")}`;
+  return `${p.name} | ${p.kind || "apartment"} | ${p.neighborhood || ""} | ${p.priceMin ? "$" + p.priceMin + (p.priceMax && p.priceMax !== p.priceMin ? "-" + p.priceMax : "") : "price ?"} | walk ${t ? t.walk + " min" : "?"} | pool ${yn(p.pool)} | own bath ${yn(p.privateBath)} | balcony ${yn(p.balcony)} | windows every bedroom ${yn(p.windowsEveryBedroom)} | parking ${p.parkingPerMonth != null ? "$" + p.parkingPerMonth + "/mo" : "?"} | plans ${(p.plans || []).join(",")}`;
 }
 
 async function ask(db: any, uid: string, q: string, history: any[], folders: any[] = []) {
