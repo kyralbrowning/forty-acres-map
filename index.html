@@ -599,7 +599,8 @@ async function fill(){const p=$g("appr");p.innerHTML='<div class="abox"><div cla
     <div class="msgs" id="aiMsgs"></div>
     <form id="aiForm" autocomplete="off">
       <input id="aiQ" maxlength="600" placeholder="Ask anything about the places">
-      <input id="aiWeb" class="full" type="url" placeholder="Website link (optional, helps me find it)" hidden>
+      <input id="aiAddr" class="full" maxlength="160" placeholder="Address (optional)" hidden>
+      <input id="aiWeb" class="full" type="url" placeholder="Website link (optional)" hidden>
       <button type="submit" id="aiGo">Send</button>
       <div class="hint" id="aiHint">Answers come from the map's info. Double-check prices on the official site.</div>
     </form>
@@ -638,10 +639,14 @@ function bubble(m){const d=document.createElement("div");d.className="m "+(m.rol
 function intro(){const d=bubble({role:"bot",text:mode==="ask"?"Ask me to compare places or find options, like price, walk time, pool or your own bathroom. I can see your saved places too.":"Type the name of a place that isn't on the map. I'll check it's real, look up its info, and add it if it's within about a 20-minute drive of campus."});d.classList.add("intro");
   if(mode==="ask"&&!cur.msgs.length){const s=document.createElement("div");s.className="sugg";["Compare my saved places","Which have a pool and my own bathroom under $1,200?","Closest places with a balcony","What's the cheapest 4x4 in West Campus?"].forEach(t=>{const b=document.createElement("button");b.type="button";b.textContent=t;b.onclick=()=>{$a("aiQ").value=t;$a("aiForm").requestSubmit()};s.appendChild(b)});$a("aiMsgs").appendChild(s)}}
 function render(){$a("aiMsgs").innerHTML="";intro();cur.msgs.forEach(bubble);$a("aiMsgs").scrollTop=1e9}
-function setMode(m){mode=m;$a("aiTAsk").setAttribute("aria-pressed",m==="ask");$a("aiTAdd").setAttribute("aria-pressed",m==="add");$a("aiWeb").hidden=m!=="add";
-  $a("aiQ").placeholder=m==="ask"?"Ask anything about the places":"Name of the place, e.g. \"The Castilian\"";$a("aiGo").textContent=m==="ask"?"Send":"Find & add";
-  $a("aiHint").textContent=m==="ask"?"Answers come from the map's info. Double-check prices on the official site.":"Places added with AI are marked so people know to double-check them.";
+function setMode(m){mode=m;$a("aiTAsk").setAttribute("aria-pressed",m==="ask");$a("aiTAdd").setAttribute("aria-pressed",m==="add");$a("aiWeb").hidden=m!=="add";$a("aiAddr").hidden=m!=="add";
+  $a("aiQ").placeholder=m==="ask"?"Ask anything about the places":"Place name (required), e.g. The Castilian";if(m==="add")checkCaps();$a("aiGo").textContent=m==="ask"?"Send":"Find & add";
+  $a("aiHint").textContent=m==="ask"?"Answers come from the map's info. Double-check prices on the official site.":addHint();
   const it=$a("aiMsgs").querySelector(".intro");if(it){it.remove();const sg=$a("aiMsgs").querySelector(".sugg");if(sg)sg.remove();const first=$a("aiMsgs").firstChild;const keep=[...$a("aiMsgs").children];$a("aiMsgs").innerHTML="";intro();keep.forEach(k=>$a("aiMsgs").appendChild(k))}}
+let CAN_SEARCH=null;
+function addHint(){return CAN_SEARCH===false?"Only the name and website are required. Places added with AI are marked so people double-check them.":"Only the name is required. Address or website helps me find the right place. Places added with AI are marked so people double-check them."}
+async function checkCaps(){if(CAN_SEARCH!==null)return;try{const r=await call({action:"caps"});CAN_SEARCH=!!(r&&r.search)}catch(e){CAN_SEARCH=true}
+  $a("aiWeb").placeholder=CAN_SEARCH?"Website link (optional)":"Website link (required)";$a("aiWeb").required=false;if(mode==="add")$a("aiHint").textContent=addHint()}
 function showPane(p){$a("aiChat").hidden=p!=="chat";$a("aiPast").hidden=p!=="past";$a("aiTitle").textContent=p==="past"?"Past chats":"Ask AI";$a("aiHist").setAttribute("aria-pressed",p==="past")}
 function rel(t){const d=new Date(t),n=new Date();return d.toDateString()===n.toDateString()?d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):d.toLocaleDateString([],{month:"short",day:"numeric"})}
 function renderPast(){persist();const all=loadAll(),L=$a("aiPList");
@@ -655,13 +660,14 @@ $a("aiHist").onclick=()=>{if(!$a("aiPast").hidden){showPane("chat");return}rende
 $a("aiNew").onclick=()=>{persist();newChat();showPane("chat");$a("aiQ").focus()};
 async function call(body){const r=await A.sb.functions.invoke("ai",{body});if(r.error){let m="Something went wrong. Try again.";try{const j=await r.error.context.json();if(j&&j.error)m=j.error}catch(e){}throw new Error(m)}return r.data}
 function apiHistory(){return cur.msgs.filter(m=>!m.err&&m.kind==="ask").slice(-8).map(m=>({role:m.role==="me"?"user":"ai",text:m.text}))}
-$a("aiForm").onsubmit=async e=>{e.preventDefault();if(busy)return;const q=$a("aiQ").value.trim();if(!q)return;busy=true;$a("aiGo").disabled=true;
+$a("aiForm").onsubmit=async e=>{e.preventDefault();if(busy)return;const q=$a("aiQ").value.trim();if(!q){if(mode==="add")$a("aiQ").focus();return}
+  if(mode==="add"&&CAN_SEARCH===false&&!$a("aiWeb").value.trim()){$a("aiWeb").focus();$a("aiHint").textContent="Add the website link too. Right now the free AI can't search the web.";return}busy=true;$a("aiGo").disabled=true;
   const chat=cur;const sg=$a("aiMsgs").querySelector(".sugg");if(sg)sg.remove();const hist=apiHistory();
   const mine={role:"me",text:q,kind:mode};chat.msgs.push(mine);if(!chat.title)chat.title=(mode==="add"?"Add: ":"")+q.slice(0,60);bubble(mine);$a("aiQ").value="";
   const w=bubble({role:"bot",text:mode==="ask"?"*Thinking…*":"*Looking it up… this can take 20–30 seconds.*"});w.innerHTML="<i>"+(mode==="ask"?"Thinking…":"Looking it up… this can take 20–30 seconds.")+"</i>";$a("aiMsgs").scrollTop=1e9;
   let reply;
   try{if(mode==="ask"){const r=await call({action:"ask",question:q,history:hist});reply={role:"bot",text:r.answer||"",kind:"ask"}}
-    else{const web=$a("aiWeb").value.trim();const r=await call({action:"add",query:q,website:web||undefined});reply={role:"bot",text:r.message||"",kind:"add"};if(r.ok){$a("aiWeb").value="";reply.placeId=r.id}else if(r.exists&&r.id)reply.placeId=r.id;else if(r.needWebsite)setTimeout(()=>$a("aiWeb").focus(),50)}}
+    else{const web=$a("aiWeb").value.trim(),addr=$a("aiAddr").value.trim();const r=await call({action:"add",query:q,website:web||undefined,address:addr||undefined});if(r.needWebsite)CAN_SEARCH=CAN_SEARCH&&!!web;reply={role:"bot",text:r.message||"",kind:"add"};if(r.ok){$a("aiWeb").value="";$a("aiAddr").value="";reply.placeId=r.id}else if(r.exists&&r.id)reply.placeId=r.id;else if(r.needWebsite)setTimeout(()=>$a("aiWeb").focus(),50)}}
   catch(x){reply={role:"bot",text:x.message,err:true,kind:mode}}
   finally{busy=false;$a("aiGo").disabled=false}
   chat.msgs.push(reply);persist();if(chat===cur){w.remove();bubble(reply);$a("aiMsgs").scrollTop=1e9}};

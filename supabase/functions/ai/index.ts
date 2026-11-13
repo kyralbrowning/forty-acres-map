@@ -63,6 +63,15 @@ async function gemini(contents: any[], opts: { system?: string; json?: boolean; 
   const urls = (c?.groundingMetadata?.groundingChunks || []).map((g: any) => g.web?.uri).filter(Boolean);
   return { text, urls };
 }
+let SEARCH_OK: boolean | null = null, SEARCH_AT = 0;
+async function canSearch() {
+  if (SEARCH_OK !== null && Date.now() - SEARCH_AT < 6 * 3600e3) return SEARCH_OK;
+  try {
+    const r = await gemini([{ role: "user", parts: [{ text: "What is the street address of the UT Austin Tower? One line." }] }], { search: true });
+    SEARCH_OK = !!r.text;
+  } catch (e: any) { SEARCH_OK = e?.status === 429 ? (SEARCH_OK ?? false) : false; console.error("search check:", e?.message); }
+  SEARCH_AT = Date.now(); return SEARCH_OK;
+}
 const parseJson = (t: string) => { try { return JSON.parse(t.replace(/^```(json)?|```$/g, "").trim()); } catch { const m = t.match(/\{[\s\S]*\}/); if (m) try { return JSON.parse(m[0]); } catch { /* */ } return null; } };
 
 // ---- helpers ----
@@ -104,6 +113,9 @@ Deno.serve(async (req) => {
   if (mem?.status !== "approved") return out({ error: "Your account isn't approved yet." }, 403);
   const admin = mem.is_admin === true;
 
+  let body: any = {}; try { body = await req.json(); } catch { /* */ }
+  if (body.action === "caps") { try { return out({ search: await canSearch() }); } catch { return out({ search: false }); } }
+
   // daily limit
   const day = new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
   const { data: used, error: uerr } = await db.from("ai_usage").select("count").eq("user_id", u.user.id).eq("day", day).maybeSingle();
@@ -113,10 +125,9 @@ Deno.serve(async (req) => {
     await db.from("ai_usage").upsert({ user_id: u.user.id, day, count: (used?.count || 0) + 1 }, { onConflict: "user_id,day" });
   }
 
-  let body: any = {}; try { body = await req.json(); } catch { /* */ }
   try {
     if (body.action === "ask") return out(await ask(db, u.user.id, String(body.question || "").slice(0, 600), Array.isArray(body.history) ? body.history.slice(-6) : []));
-    if (body.action === "add") return out(await add(db, u.user, String(body.query || "").slice(0, 200), safeUrl(body.website)));
+    if (body.action === "add") return out(await add(db, u.user, String(body.query || "").slice(0, 200), safeUrl(body.website), typeof body.address === "string" ? body.address.slice(0, 160) : ""));
     return out({ error: "Unknown action" }, 400);
   } catch (e: any) {
     const msg = e?.status === 429 ? "The free AI is busy or out of free uses for now. Try again in a minute (or tomorrow)." : "Something went wrong with the AI. Try again.";
@@ -168,7 +179,7 @@ ${detail.join("\n")}`;
   return { answer: r.text || "I couldn't come up with an answer. Try asking another way." };
 }
 
-async function add(db: any, user: any, query: string, website: string | null) {
+async function add(db: any, user: any, query: string, website: string | null, address = "") {
   if (query.trim().length < 3) return { ok: false, message: "Type the name of the place." };
   const places = await allPlaces(db);
   const qs = slug(query);
@@ -178,8 +189,10 @@ async function add(db: any, user: any, query: string, website: string | null) {
 
   // 1) Try web search (Gemini + Google Search). 2) Fall back to the website the user gave.
   let info: any = null, urls: string[] = [];
-  try {
-    const r = await gemini([{ role: "user", parts: [{ text: `Find this student housing place near the University of Texas at Austin: "${query}"${website ? " (website: " + website + ")" : ""}. Use its official website first, then other reliable sources. For prices, use the 2027-28 school year if listed, otherwise the newest.\n${FIELDS}` }] }], { search: true });
+  const searchOk = await canSearch();
+  if (!searchOk && !website) return { ok: false, needWebsite: true, message: "Add the place's website link so I can look it up." };
+  if (searchOk) try {
+    const r = await gemini([{ role: "user", parts: [{ text: `Find this student housing place near the University of Texas at Austin: "${query}"${address ? " (address: " + address + ")" : ""}${website ? " (website: " + website + ")" : ""}. Use its official website first, then other reliable sources. For prices, use the 2027-28 school year if listed, otherwise the newest.\n${FIELDS}` }] }], { search: true });
     info = parseJson(r.text); urls = r.urls;
   } catch (e) { console.error("search failed", (e as any)?.message); }
   if ((!info || !info.found) && website) {
@@ -192,7 +205,7 @@ async function add(db: any, user: any, query: string, website: string | null) {
     return { ok: false, needWebsite: !website, message: website ? `I couldn't confirm "${query}" is a real place in Austin.` : `I couldn't find "${query}". If you have its website link, add it and try again.` };
   }
   // Check it's real: the address has to be a real spot in Austin.
-  const geo = (info.address && await geocode(info.address)) || await geocode(`${info.name}, Austin, TX`);
+  const geo = (info.address && await geocode(info.address)) || (address && await geocode(address)) || await geocode(`${info.name}, Austin, TX`);
   if (!geo) return { ok: false, message: `I found "${info.name}" but couldn't confirm its address on a map, so I didn't add it.` };
   const mi = edgeMiles(geo.lng, geo.lat), t = times(mi);
   if (t.drive > MAX_DRIVE_MIN) return { ok: false, tooFar: true, message: `${info.name} is about a ${t.drive}-minute drive from campus, which is outside the map's area, so I didn't add it.` };
