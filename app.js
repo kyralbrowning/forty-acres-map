@@ -746,7 +746,7 @@ function folderLink(f){const ids=folderIds(f).filter(id=>APTS.some(a=>a.id===id)
 function newFid(){const a=new Uint8Array(10);crypto.getRandomValues(a);return [...a].map(b=>"abcdefghijklmnopqrstuvwxyz0123456789"[b%36]).join("")}
 function subFolder(f){if(!DB||folderSubs.has(f))return;folderSubs.add(f);
   DB.doc("folders/"+f).onSnapshot(d=>{if(folders[f]&&folders[f].localOnly)return;if(d.exists){const x=d.data()||{};folders[f]={name:String(x.name||"Shared folder").slice(0,40),ids:(Array.isArray(x.ids)?x.ids:[]).filter(i=>typeof i==="string"&&i.length<80).slice(0,300),live:true,
-      private:!!x.private,parent:x.parent||null,kids:Array.isArray(x.kids)?x.kids:[],people:Array.isArray(x.people)?x.people:[],notes:x.notes&&typeof x.notes==="object"?x.notes:{},addedBy:x.addedBy||{},votes:x.votes||{},status:x.status||{},prefsBy:Array.isArray(x.prefsBy)?x.prefsBy:[],feed:Array.isArray(x.feed)?x.feed:[]};
+      private:!!x.private,parent:x.parent||null,kids:Array.isArray(x.kids)?x.kids:[],people:Array.isArray(x.people)?x.people:[],notes:x.notes&&typeof x.notes==="object"?x.notes:{},addedBy:x.addedBy||{},votes:x.votes||{},status:x.status||{},flags:x.flags||{},prefsBy:Array.isArray(x.prefsBy)?x.prefsBy:[],feed:Array.isArray(x.feed)?x.feed:[]};
       for(const k of folders[f].kids){if(!folders[k.code])folders[k.code]={name:k.name,ids:[],parent:f,live:false};else folders[k.code].name=k.name;subFolder(k.code)}}
     else if(folders[f]){folders[f].live=true;writeFolder(f)}
     cacheFolders();renderList();buildPins();if(selected)renderCard()},()=>{})}
@@ -787,7 +787,8 @@ function fPeople(f){const x=folders[f];if(!x)return[];const P=x.parent&&folders[
 function fPrefs(f){const x=folders[f];if(!x)return[];const P=x.parent&&folders[x.parent]?folders[x.parent]:x;return (x.prefsBy&&x.prefsBy.length?x.prefsBy:P.prefsBy)||[]}
 const sharedish=f=>folders[f]&&!folders[f].private;
 function avgMax(f){const ms=fPrefs(f).map(p=>p.prefs&&p.prefs.max).filter(v=>typeof v==="number"&&v>0);return ms.length?Math.round(ms.reduce((a,b)=>a+b,0)/ms.length):null}
-function delReason(f,id){const x=folders[f],a=APTS.find(y=>y.id===id);if(!x||!a)return null;const v=(x.votes||{})[id]||{up:[],down:[]};const r=[];
+function delReason(f,id){const x=folders[f],a=APTS.find(y=>y.id===id);if(!x||!a)return null;const fl=(x.flags||{})[id];if(fl)return `Moved here by ${fl}`;return autoReason(f,id)?"Auto-sorted: "+autoReason(f,id):null}
+function autoReason(f,id){const x=folders[f],a=APTS.find(y=>y.id===id);if(!x||!a)return null;const v=(x.votes||{})[id]||{up:[],down:[]};const r=[];
   if(v.down.length&&v.down.length>=v.up.length)r.push(v.down.length===1?`${v.down[0]==="You"?"You":v.down[0]} gave it a 👎`:`${v.down.length} people gave it a 👎`);
   const am=avgMax(f),pr=a.own!=null?a.own:PR(a);if(am&&pr!=null&&pr>am)r.push(`${money(pr)} is over the group's average max (${money(am)})`);
   return r.length?r.join(" · "):null}
@@ -796,30 +797,43 @@ function fGroups(f){const x=folders[f];const ids=folderIds(f).filter(id=>APTS.so
   if(ppl.length>1)g.push({k:"everyone",l:"Everyone likes",ids:ids.filter(id=>{const v=V[id];return v&&v.up.length>=ppl.length&&!v.down.length})});
   for(const n of ppl)g.push({k:"p:"+n,l:n==="You"?"You like":n+" likes",ids:ids.filter(id=>V[id]&&V[id].up.includes(n))});
   g.push({k:"toured",l:"Toured",ids:ids.filter(id=>S[id]==="toured")},{k:"applied",l:"Applied",ids:ids.filter(id=>S[id]==="applied")});
+  g.push({k:"look",l:"You should look at",ids:shouldLook(f).map(a=>a.id),outside:true});
   g.push({k:"del",l:"Maybe delete",ids:ids.filter(id=>delReason(f,id))});
   return g}
+function shouldLook(f){const x=folders[f];const inF=new Set(folderIds(f));const ppl=fPrefs(f).map(p=>p.prefs).filter(Boolean);
+  const liked=folderIds(f).filter(id=>{const v=(x.votes||{})[id];return !v||v.up.length>v.down.length}).map(id=>APTS.find(a=>a.id===id)).filter(Boolean).filter(a=>!delReason(f,a.id));
+  const out=[];for(const c of APTS){if(inF.has(c.id))continue;let pf=0.5;if(ppl.length){pf=ppl.reduce((s,p)=>{const ch=prefChecks(c,p);return s+(ch.length?ch.filter(Boolean).length/ch.length:0.5)},0)/ppl.length;if(ppl.some(p=>p.max&&c.own!=null&&c.own>p.max*1.05))pf-=.25}
+    let sm=0;if(liked.length){let best=0;for(const b of liked){const v=sim(c,b);if(v>best)best=v}sm=best}
+    out.push({a:c,score:pf*.6+sm*.4+(c.rating?(c.rating-3.5)*.02:0)})}
+  out.sort((p,q)=>q.score-p.score);return out.slice(0,12).map(o=>o.a)}
 let feedOpen=false;
 function feedSeen(f){try{return +localStorage.getItem("fah.feedSeen."+f)||0}catch(e){return 0}}
 function feedLine(e){const a=APTS.find(x=>x.id===e.place),pn=a?a.name:"a place",fl=e.folderName?` in ${e.folderName}`:"";
-  const t={added:`added ${pn}`,removed:`removed ${pn}`,status_toured:`toured ${pn}`,status_applied:`applied to ${pn}`,status_cleared:`unmarked ${pn}`,liked:`liked ${pn} 👍`,disliked:`didn't like ${pn} 👎`,comment:`commented on ${pn}: “${e.detail||""}”`}[e.kind]||`changed ${pn}`;
+  const t={added:`added ${pn}`,removed:`removed ${pn}`,status_toured:`toured ${pn}`,status_applied:`applied to ${pn}`,status_cleared:`unmarked ${pn}`,flagged:`moved ${pn} to Maybe delete`,unflagged:`kept ${pn}`,liked:`liked ${pn} 👍`,disliked:`didn't like ${pn} 👎`,comment:`commented on ${pn}: “${e.detail||""}”`}[e.kind]||`changed ${pn}`;
   return `${e.name} ${t}`}
 function ago(t){const m=Math.round((Date.now()-new Date(t))/60000);return m<1?"just now":m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":new Date(t).toLocaleDateString([],{month:"short",day:"numeric"})}
 function feedHtml(f){const x=folders[f];const root=x.parent&&folders[x.parent]?x.parent:f;const F=(folders[root].feed||x.feed||[]).filter(e=>!e.mine&&new Date(e.at).getTime()>feedSeen(root));if(!F.length)return"";
   const show=feedOpen?F.slice(0,20):F.slice(0,3);
   return `<div class="fupd" role="status"><b>Updates from your roommates</b><ul>${show.map(e=>`<li>${esc(feedLine(e))}<span>${ago(e.at)}</span></li>`).join("")}</ul>${F.length>3?`<button type="button" class="fumore" id="fuMore">${feedOpen?"Show less":`See all ${F.length}`}</button>`:""}<button type="button" class="fux" id="fuX" data-root="${root}" aria-label="Dismiss updates">✕</button></div>`}
 function groupsHtml(f){if(!sharedish(f))return"";const G=fGroups(f);if(!G.some(g=>g.k===foldFilter))foldFilter="all";
-  return `<div class="fgroups" role="group" aria-label="Groups">${G.filter(g=>g.k==="all"||g.ids.length||g.k===foldFilter||g.k==="del").map(g=>`<button type="button" class="fgrp${g.k==="del"?" del":""}" data-fgrp="${esc(g.k)}" aria-pressed="${foldFilter===g.k}"><span>${esc(g.l)}</span><b>${g.ids.length}</b></button>`).join("")}</div>
+  return `<div class="fgroups" role="group" aria-label="Groups">${G.filter(g=>g.k==="all"||g.ids.length||g.k===foldFilter||g.k==="del").map(g=>`<button type="button" class="fgrp${g.k==="del"?" del":g.k==="look"?" look":""}" data-fgrp="${esc(g.k)}" aria-pressed="${foldFilter===g.k}"><span>${esc(g.l)}</span><b>${g.ids.length}</b></button>`).join("")}</div>
     <div class="frow"><button type="button" class="fb" id="fCompare">Compare everyone's preferences</button></div>`}
-function decorateRows(f){if(!sharedish(f))return;const x=folders[f];document.querySelectorAll("#list .res").forEach(li=>{const id=li.dataset.id,rt=li.querySelector(".rt");if(!rt||rt.querySelector(".fvote"))return;
+function decorateRows(f){if(!sharedish(f))return;const x=folders[f];
+  if(foldFilter==="look"){document.querySelectorAll("#list .res").forEach(li=>{const rt=li.querySelector(".rt");if(!rt||rt.querySelector(".fvote"))return;rt.querySelectorAll(".nicon,.addedby").forEach(e=>e.remove());const bar=document.createElement("div");bar.className="fvote";bar.innerHTML=`<button type="button" class="vb on" data-fadd="${esc(li.dataset.id)}">+ Add to folder</button>`;rt.appendChild(bar)});return}
+  document.querySelectorAll("#list .res").forEach(li=>{const id=li.dataset.id,rt=li.querySelector(".rt");if(!rt||rt.querySelector(".fvote"))return;
   const v=(x.votes||{})[id]||{up:[],down:[],mine:0},st=(x.status||{})[id]||"";const bar=document.createElement("div");bar.className="fvote";
   bar.innerHTML=`<button type="button" class="vb${v.mine===1?" on":""}" data-vote="1" data-vid="${esc(id)}" aria-label="Thumbs up" title="${esc(v.up.join(", "))}">👍 ${v.up.length||""}</button><button type="button" class="vb${v.mine===-1?" on":""}" data-vote="-1" data-vid="${esc(id)}" aria-label="Thumbs down" title="${esc(v.down.join(", "))}">👎 ${v.down.length||""}</button><button type="button" class="sb${st?" on":""}" data-stat="${esc(id)}">${st==="toured"?"✓ Toured":st==="applied"?"✓ Applied":"Mark toured"}</button>`;
   const maxes=fPrefs(f).map(p=>p.prefs&&p.prefs.max).filter(v=>typeof v==="number"&&v>0);const a0=APTS.find(y=>y.id===id),pr0=a0?(a0.own!=null?a0.own:PR(a0)):null;
   if(maxes.length&&pr0!=null){const n=maxes.filter(m=>pr0<=m).length;const fb=document.createElement("span");fb.className="fitb"+(n===maxes.length?" all":n===0?" none":"");fb.textContent=n===maxes.length?`Fits everyone's budget`:`Fits ${n} of ${maxes.length} budgets`;rt.appendChild(fb)}
-  if(foldFilter==="del"){const why=delReason(f,id);if(why){const w=document.createElement("div");w.className="fwhy";w.textContent=why;rt.appendChild(w)}const del=document.createElement("button");del.type="button";del.className="vdel";del.dataset.fdel=id;del.textContent="Remove";bar.appendChild(del)}
+  const fl=(x.flags||{})[id];
+  if(foldFilter==="del"){const why=delReason(f,id);if(why){const w=document.createElement("div");w.className="fwhy";w.textContent=why;rt.appendChild(w)}if(fl){const k=document.createElement("button");k.type="button";k.className="sb";k.dataset.fflag=id;k.dataset.on="0";k.textContent="Keep it";bar.appendChild(k)}const del=document.createElement("button");del.type="button";del.className="vdel";del.dataset.fdel=id;del.textContent="Delete";bar.appendChild(del)}
+  else if(!fl){const mv=document.createElement("button");mv.type="button";mv.className="sb mv";mv.dataset.fflag=id;mv.dataset.on="1";mv.textContent="Maybe delete";bar.appendChild(mv)}
   rt.appendChild(bar)})}
-$("#list").addEventListener("click",async e=>{const b=e.target.closest("[data-vote],[data-stat],[data-fdel]");if(!b||!openFolder)return;e.stopPropagation();e.preventDefault();const f=openFolder,x=folders[f];
+$("#list").addEventListener("click",async e=>{const b=e.target.closest("[data-vote],[data-stat],[data-fdel],[data-fflag],[data-fadd]");if(!b||!openFolder)return;e.stopPropagation();e.preventDefault();const f=openFolder,x=folders[f];
   try{if(b.dataset.vote){const id=b.dataset.vid,cur=((x.votes||{})[id]||{}).mine||0,v=+b.dataset.vote;await window.FAH_NOTES.vote(f,id,cur===v?0:v)}
     else if(b.dataset.stat){const id=b.dataset.stat,cur=(x.status||{})[id]||"";const nx=cur===""?"toured":cur==="toured"?"applied":"";if(nx==="toured"){openTour(f,id);return}await window.FAH_NOTES.status(f,id,nx)}
+    else if(b.dataset.fflag){await window.FAH_NOTES.flag(f,b.dataset.fflag,b.dataset.on==="1")}
+    else if(b.dataset.fadd){const id=b.dataset.fadd;if(!x.ids.includes(id)){x.ids=[...x.ids,id];writeFolder(f)}folderMsg="Added to "+x.name+".";renderList();buildPins()}
     else if(b.dataset.fdel){const id=b.dataset.fdel;x.ids=x.ids.filter(i=>i!==id);writeFolder(f);renderList();buildPins()}}catch(err){folderMsg="Couldn't save that. Try again.";renderList()}},true);
 function openTour(f,id){const a=APTS.find(y=>y.id===id);if(!a)return;let d=$("#tourDlg");if(!d){d=document.createElement("div");d.id="tourDlg";document.body.appendChild(d)}let v=0;
   d.innerHTML=`<div class="tbox" role="dialog" aria-label="Toured"><b>You toured ${esc(a.name)}</b><p>How was it? Your roommates will see this in the folder.</p>
@@ -863,7 +877,7 @@ const _renderList=renderList;renderList=function(){_renderList();renderFolderBar
     const b=document.createElement("button");b.type="button";b.className="nicon"+(ns.length?" has":"");b.dataset.noteF=openFolder;b.dataset.noteId=id;b.setAttribute("aria-label",ns.length?"Read notes":"Add a note");
     b.innerHTML=NOTE_SVG+(ns.length?`<span>${esc(ns[0].text.slice(0,60))}${ns.length>1?` +${ns.length-1}`:""}</span>`:`<span>${x.private?"Add note":"Add comment"}</span>`);rt.appendChild(b);
     if(by&&!x.private){const s2=document.createElement("span");s2.className="addedby";s2.textContent="Added by "+by;rt.appendChild(s2)}});decorateRows(openFolder)}};
-const _visible2=visible;visible=function(){if(tab==="saved"&&openFolder&&folders[openFolder]&&sharedish(openFolder)&&foldFilter!=="all"){const G=fGroups(openFolder).find(g=>g.k===foldFilter);if(G){const s=new Set(G.ids);return APTS.filter(a=>s.has(a.id)).filter(matchesQuery)}}return _visible2()};
+const _visible2=visible;visible=function(){if(tab==="saved"&&openFolder&&folders[openFolder]&&sharedish(openFolder)&&foldFilter!=="all"){const G=fGroups(openFolder).find(g=>g.k===foldFilter);if(G){if(G.k==="look"){const m=new Map(APTS.map(a=>[a.id,a]));return G.ids.map(i=>m.get(i)).filter(Boolean).filter(matchesQuery)}const s=new Set(G.ids);return APTS.filter(a=>s.has(a.id)).filter(matchesQuery)}}return _visible2()};
 $("#list").addEventListener("click",e=>{const b=e.target.closest(".nicon");if(!b)return;e.stopPropagation();e.preventDefault();openNote(b.dataset.noteF,b.dataset.noteId)},true);
 function renderFolderBar(){const el=$("#fold");if(!el)return;if(tab==="for"){renderPrefs(el);return}if(tab!=="saved"){el.innerHTML="";return}
   const msg=folderMsg?`<div class="fnote warn">${esc(folderMsg)}</div>`:"";
