@@ -4,7 +4,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || (() => { try { const k = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}"); return k.default || Object.values(k)[0]; } catch { return ""; } })() as string;
 const GKEY = Deno.env.get("GEMINI_API_KEY") || "";
 const DAILY = Number(Deno.env.get("AI_DAILY_LIMIT") || "25");
 const ADMIN_DAILY = 200;
