@@ -728,23 +728,52 @@ let rT;addEventListener("resize",()=>{clearTimeout(rT);rT=setTimeout(schedule,80
 const SITE=(typeof window!=="undefined"&&window.FAH_SITE)||"https://claude.ai/artifact/SdYcitbApo5cx7Zqs1fszD";
 let folders=(()=>{const x=store("fahm.folderData");return x&&typeof x==="object"?x:{}})();
 let myFolders=new Set((store("fahm.folders")||[]).filter(f=>/^[a-z0-9]{8,40}$/.test(f)));
-let openFolder=null,myFoldersRef=null,folderMsg="",foldEdit=null,foldLinkShown=null,linkExtra=null;
+let newKind="shared",openFolder=null,myFoldersRef=null,folderMsg="",foldEdit=null,foldLinkShown=null,linkExtra=null;
 const folderSubs=new Set(),folderChains={};
 const nameSlug=n=>slug(n).slice(0,40);
 const unslugName=s=>{const t=s.replace(/-/g," ").trim();return t?t.charAt(0).toUpperCase()+t.slice(1):"Shared folder"};
-function cacheFolders(){const o={};for(const f of myFolders)if(folders[f])o[f]={name:folders[f].name,ids:folders[f].ids};store("fahm.folderData",o)}
+function cacheFolders(){const o={};for(const f of Object.keys(folders))if(folders[f]&&(myFolders.has(f)||folders[f].parent))o[f]={name:folders[f].name,ids:folders[f].ids,private:!!folders[f].private,parent:folders[f].parent||null,kids:folders[f].kids||[]};store("fahm.folderData",o)}
 function saveMyFolders(){store("fahm.folders",[...myFolders]);cacheFolders();if(myFoldersRef){const ids=[...myFolders];myFoldersRef.set({ids,updatedAt:Date.now()}).catch(()=>{})}}
 function folderIds(f){return (folders[f]&&folders[f].ids)||[]}
 let foldLinkVal="";
 function folderLink(f){const ids=folderIds(f).filter(id=>APTS.some(a=>a.id===id));return SITE+"#folder-"+f+"--title-"+nameSlug(folders[f].name||"shared")+(ids.length?"--"+ids.join("--"):"")}
 function newFid(){const a=new Uint8Array(10);crypto.getRandomValues(a);return [...a].map(b=>"abcdefghijklmnopqrstuvwxyz0123456789"[b%36]).join("")}
 function subFolder(f){if(!DB||folderSubs.has(f))return;folderSubs.add(f);
-  DB.doc("folders/"+f).onSnapshot(d=>{if(folders[f]&&folders[f].localOnly)return;if(d.exists){const x=d.data()||{};folders[f]={name:String(x.name||"Shared folder").slice(0,40),ids:(Array.isArray(x.ids)?x.ids:[]).filter(i=>typeof i==="string"&&i.length<80).slice(0,300),live:true}}
+  DB.doc("folders/"+f).onSnapshot(d=>{if(folders[f]&&folders[f].localOnly)return;if(d.exists){const x=d.data()||{};folders[f]={name:String(x.name||"Shared folder").slice(0,40),ids:(Array.isArray(x.ids)?x.ids:[]).filter(i=>typeof i==="string"&&i.length<80).slice(0,300),live:true,
+      private:!!x.private,parent:x.parent||null,kids:Array.isArray(x.kids)?x.kids:[],people:Array.isArray(x.people)?x.people:[],notes:x.notes&&typeof x.notes==="object"?x.notes:{},addedBy:x.addedBy||{}};
+      for(const k of folders[f].kids){if(!folders[k.code])folders[k.code]={name:k.name,ids:[],parent:f,live:false};else folders[k.code].name=k.name;subFolder(k.code)}}
     else if(folders[f]){folders[f].live=true;writeFolder(f)}
     cacheFolders();renderList();buildPins();if(selected)renderCard()},()=>{})}
 function writeFolder(f){cacheFolders();if(!DB)return;const x=folders[f];if(!x)return;
-  folderChains[f]=(folderChains[f]||Promise.resolve()).then(()=>DB.doc("folders/"+f).set({name:x.name,ids:x.ids,updatedAt:Date.now()})).catch(()=>{x.live=false;x.localOnly=true;cacheFolders();renderList()})}
-function createFolder(name,firstId){const f=newFid();folders[f]={name:(name||"Our places").slice(0,40),ids:firstId?[firstId]:[],live:!!DB};myFolders.add(f);saveMyFolders();writeFolder(f);subFolder(f);return f}
+  folderChains[f]=(folderChains[f]||Promise.resolve()).then(()=>DB.doc("folders/"+f).set({name:x.name,ids:x.ids,private:!!x.private,parent:x.parent||null,updatedAt:Date.now()})).catch(()=>{x.live=false;x.localOnly=true;cacheFolders();renderList()})}
+function createFolder(name,firstId,opt){opt=opt||{};const f=newFid();folders[f]={name:(name||"Our places").slice(0,40),ids:firstId?[firstId]:[],live:!!DB,private:!!opt.private&&!opt.parent,parent:opt.parent||null,kids:[],notes:{}};
+  if(opt.parent){const P=folders[opt.parent];if(P){P.kids=[...(P.kids||[]),{code:f,name:folders[f].name}]}}else{myFolders.add(f);saveMyFolders()}
+  writeFolder(f);subFolder(f);return f}
+const isSharedF=f=>folders[f]&&!folders[f].private&&!folders[f].parent;
+function folderTitle(f){const x=folders[f];if(!x)return"";return x.parent&&folders[x.parent]?folders[x.parent].name+" › "+x.name:x.name}
+function allFolderCodes(){const out=[];for(const f of myFolders){if(!folders[f])continue;out.push(f);for(const k of folders[f].kids||[])if(folders[k.code])out.push(k.code)}return out}
+function notesFor(f,id){return ((folders[f]&&folders[f].notes)||{})[id]||[]}
+const NOTE_SVG='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg>';
+function openNote(f,id){const a=APTS.find(x=>x.id===id),x=folders[f];if(!a||!x)return;let d=$("#noteDlg");if(!d){d=document.createElement("div");d.id="noteDlg";document.body.appendChild(d)}
+  const ns=notesFor(f,id),mine=ns.find(n=>n.mine),others=ns.filter(n=>!n.mine);
+  d.innerHTML=`<div class="nbox" role="dialog" aria-label="Notes"><div class="nhd"><div><b>${esc(a.name)}</b><span>Notes in ${esc(folderTitle(f))}</span></div><button type="button" id="nX" aria-label="Close">✕</button></div>
+    ${others.map(n=>`<div class="nitem"><b>${esc(n.name)}</b><p>${esc(n.text)}</p><span>${new Date(n.at).toLocaleDateString([],{month:"short",day:"numeric"})}</span></div>`).join("")}
+    <label class="nlbl" for="nTxt">${others.length?"Your note":"Note"}${x.private?"":` <span>(everyone in this folder can see it)</span>`}</label>
+    <textarea id="nTxt" maxlength="500" rows="4" placeholder="Like: ask about the 4x4 with a balcony, tour Saturday">${esc(mine?mine.text:"")}</textarea>
+    <div class="nbtns"><button type="button" class="fb pri" id="nSave">Save note</button>${mine?'<button type="button" class="fb" id="nDel">Delete my note</button>':""}<span id="nMsg"></span></div></div>`;
+  d.hidden=false;const close=()=>{d.hidden=true};d.querySelector("#nX").onclick=close;d.onclick=e=>{if(e.target===d)close()};
+  const save=async t=>{$("#nMsg").textContent="Saving…";try{await window.FAH_NOTES.set(f,id,t);close()}catch(e){$("#nMsg").textContent="Couldn't save. Try again."}};
+  d.querySelector("#nSave").onclick=()=>save($("#nTxt").value);const del=d.querySelector("#nDel");if(del)del.onclick=()=>save("");setTimeout(()=>$("#nTxt").focus(),50)}
+window.FAH_FOLDERS={list:()=>allFolderCodes().map(f=>({code:f,name:folderTitle(f),private:!!folders[f].private,shared:isSharedF(f),sub:!!folders[f].parent,count:folderIds(f).length})),
+  create:(name,ids,opt)=>{const f=createFolder(name,null,opt);folders[f].ids=[...new Set(ids||[])];writeFolder(f);renderList();buildPins();return f},
+  add:(f,ids)=>{const x=folders[f];if(!x)return false;x.ids=[...new Set([...x.ids,...ids])];writeFolder(f);renderList();buildPins();return true},
+  remove:(f,ids)=>{const x=folders[f];if(!x)return false;x.ids=x.ids.filter(i=>!ids.includes(i));writeFolder(f);renderList();buildPins();return true},
+  note:(f,id,t)=>window.FAH_NOTES.set(f,id,t),
+  heart:(ids,on)=>{for(const id of ids){if(on!==hearts.has(id))toggleHeart(id)}},
+  saved:()=>[...hearts],
+  places:()=>APTS.map(a=>({id:a.id,name:a.name})),
+  open:id=>openCard(id,false)};
+
 function toggleInFolder(f,id){const x=folders[f];if(!x)return;x.ids=x.ids.includes(id)?x.ids.filter(i=>i!==id):[...x.ids,id];writeFolder(f);renderList();buildPins();if(selected)renderCard()}
 function readHash(){let h="";try{h=decodeURIComponent(location.hash.slice(1))}catch(e){return}
   const m=/^folder-([a-z0-9]{8,40})((?:--[a-z0-9-]+)*)$/.exec(h);if(!m)return;const f=m[1];
@@ -756,30 +785,47 @@ addEventListener("hashchange",readHash);
 /* folder bar in the Saved tab */
 (function(){const ul=$("#list");const d=document.createElement("div");d.id="fold";ul.parentNode.insertBefore(d,ul)})();
 const _visible=visible;visible=function(){if(tab==="saved"&&openFolder){const ids=new Set(folderIds(openFolder));return APTS.filter(a=>ids.has(a.id)).filter(matchesQuery)}return _visible()};
-const _renderList=renderList;renderList=function(){_renderList();renderFolderBar()};
+const _renderList=renderList;renderList=function(){_renderList();renderFolderBar();
+  if(tab==="saved"&&openFolder&&folders[openFolder]){const x=folders[openFolder];document.querySelectorAll("#list .res").forEach(li=>{const id=li.dataset.id,ns=notesFor(openFolder,id),by=(x.addedBy||{})[id];const rt=li.querySelector(".rt");if(!rt)return;
+    const b=document.createElement("button");b.type="button";b.className="nicon"+(ns.length?" has":"");b.dataset.noteF=openFolder;b.dataset.noteId=id;b.setAttribute("aria-label",ns.length?"Read notes":"Add a note");
+    b.innerHTML=NOTE_SVG+(ns.length?`<span>${esc(ns[0].text.slice(0,60))}${ns.length>1?` +${ns.length-1}`:""}</span>`:"<span>Add note</span>");rt.appendChild(b);
+    if(by&&!x.private){const s2=document.createElement("span");s2.className="addedby";s2.textContent="Added by "+by;rt.appendChild(s2)}})}};
+$("#list").addEventListener("click",e=>{const b=e.target.closest(".nicon");if(!b)return;e.stopPropagation();e.preventDefault();openNote(b.dataset.noteF,b.dataset.noteId)},true);
 function renderFolderBar(){const el=$("#fold");if(!el)return;if(tab==="for"){renderPrefs(el);return}if(tab!=="saved"){el.innerHTML="";return}
   const msg=folderMsg?`<div class="fnote warn">${esc(folderMsg)}</div>`:"";
-  const editBox=(val,btn)=>`<div class="frow"><input id="fName" maxlength="40" value="${esc(val)}" placeholder="Folder name, like “Kyra + Sam”" aria-label="Folder name"><button class="fb pri" id="fSave">${btn}</button><button class="fb" id="fCancel">Cancel</button></div>`;
-  if(openFolder&&folders[openFolder]){const x=folders[openFolder];const n=folderIds(openFolder).filter(id=>APTS.some(a=>a.id===id)).length;
-    el.innerHTML=`<div class="fbar"><div class="fhead"><button class="fb" id="fBack" aria-label="Back to my saves">‹ My saves</button><b>📁 ${esc(x.name)}</b><span>${n} place${n===1?"":"s"}</span></div>
-      ${foldEdit===openFolder?editBox(x.name,"Save"):`<div class="frow"><button class="fb pri" id="fCopy">Copy link to send</button><button class="fb" id="fRename">Rename</button><button class="fb" id="fLeave">Remove from my list</button></div>`}
-      ${foldLinkShown===openFolder?`<div class="frow"><input id="fLink" readonly value="${esc(foldLinkVal||folderLink(openFolder))}" aria-label="Folder link"></div><div class="fnote">Copied (if not, select the link above and copy it). Paste it into a text. ${window.FAH_AUTH&&window.FAH_AUTH.isAdmin?"New people make an account, you approve them, then the folder opens for them.":"They'll need an account the site owner has approved."}</div>`:""}
-      ${linkExtra&&linkExtra.f===openFolder?`<div class="frow"><span class="fnote" style="flex:1">The link you opened has ${linkExtra.ids.length} place${linkExtra.ids.length===1?"":"s"} that ${linkExtra.ids.length===1?"isn't":"aren't"} in your copy yet.</span><button class="fb pri" id="fMerge">Add ${linkExtra.ids.length===1?"it":"them"}</button></div>`:""}<div class="fnote">${window.FAH_SITE?(x.live?"Live: everyone in this folder sees changes right away.":"Connecting…")+" To invite someone, tap <b>Copy link to send</b> and text it. They sign in (or make a free account) and can add or remove places with you.":(x.live?"Saved to your account, so it's the same on all your devices.":"Your changes are saved in this browser.")+" To share changes, tap <b>Copy link to send</b> and text the link. Whoever opens it sees this folder with no login, can add or remove places, and can send a link back."}</div>
-      ${n?"":`<div class="fnote">Empty for now. Open any place and tap <b>📁 ${esc(x.name)}</b> to add it.</div>`}${msg}</div>`}
-  else{const list=[...myFolders].filter(f=>folders[f]);
-    el.innerHTML=`<div class="fbar"><div class="fhead"><b>Shared folders</b><span>${list.length?"":"Make one to plan with a roommate"}</span></div>
-      <div class="chips">${list.map(f=>`<button class="chip" data-open-fold="${f}">📁 ${esc(folders[f].name)} <span style="color:var(--fg2)">${folderIds(f).length}</span></button>`).join("")}<button class="chip" id="fNew">+ New shared folder</button></div>
-      ${foldEdit==="new"?editBox("","Create"):""}${msg}</div>
+  const editBox=(val,btn,ph)=>`<div class="frow"><input id="fName" maxlength="40" value="${esc(val)}" placeholder="${esc(ph||"Folder name")}" aria-label="Folder name"><button class="fb pri" id="fSave">${btn}</button><button class="fb" id="fCancel">Cancel</button></div>`;
+  if(openFolder&&folders[openFolder]){const f=openFolder,x=folders[f];const n=folderIds(f).filter(id=>APTS.some(a=>a.id===id)).length;const sub=!!x.parent,P=sub?folders[x.parent]:null;
+    const people=(sub&&P?P.people:x.people)||[];const others=people.filter(p=>p!=="You"&&p);
+    const who=x.private?"Just you":others.length?"With "+others.join(", "):"Only you so far. Send the link to share it.";
+    const back=sub&&P?`‹ ${esc(P.name)}`:"‹ My saves";
+    const btns=foldEdit===f?editBox(x.name,"Save"):`<div class="frow">${(!x.private&&!sub)?'<button class="fb pri" id="fCopy">Copy link to send</button>':""}<button class="fb" id="fRename">Rename</button>${sub||x.private?'<button class="fb" id="fDelete">Delete folder</button>':'<button class="fb" id="fLeave">Remove from my list</button>'}</div>`;
+    const kids=(!x.private&&!sub)?`<div class="fnote">Folders inside</div><div class="chips">${(x.kids||[]).map(k=>`<button class="chip" data-open-fold="${k.code}">📁 ${esc(k.name)} <span style="color:var(--fg2)">${folderIds(k.code).length||""}</span></button>`).join("")}<button class="chip" id="fNewIn">+ New folder inside</button></div>${foldEdit==="newin"?editBox("","Create","Like “Pool places” or “Tour list”"):""}`:"";
+    el.innerHTML=`<div class="fbar"><div class="fhead"><button class="fb" id="fBack" aria-label="Back">${back}</button><b>${x.private?"🔒":"📁"} ${esc(x.name)}</b><span>${n} place${n===1?"":"s"}</span></div>
+      <div class="fnote">${esc(who)}</div>${btns}
+      ${foldLinkShown===f?`<div class="frow"><input id="fLink" readonly value="${esc(foldLinkVal||folderLink(f))}" aria-label="Folder link"></div><div class="fnote">Copied (if not, select the link above and copy it). Paste it into a text. ${window.FAH_AUTH&&window.FAH_AUTH.isAdmin?"New people make an account, you approve them, then the folder opens for them.":"They'll need an account the site owner has approved."}</div>`:""}
+      ${linkExtra&&linkExtra.f===f?`<div class="frow"><span class="fnote" style="flex:1">The link you opened has ${linkExtra.ids.length} place${linkExtra.ids.length===1?"":"s"} that ${linkExtra.ids.length===1?"isn't":"aren't"} in your copy yet.</span><button class="fb pri" id="fMerge">Add ${linkExtra.ids.length===1?"it":"them"}</button></div>`:""}
+      ${kids}
+      ${n?`<div class="fnote">Tap the note icon on a place to leave a note${x.private?"":" everyone in the folder can see"}.</div>`:`<div class="fnote">Empty for now. Open any place and tap <b>${esc(x.name)}</b> under Folders to add it.</div>`}${msg}</div>`}
+  else{const list=[...myFolders].filter(f=>folders[f]);const mine=list.filter(f=>folders[f].private),shared=list.filter(f=>!folders[f].private);
+    const chip=f=>`<button class="chip" data-open-fold="${f}">${folders[f].private?"🔒":"📁"} ${esc(folders[f].name)} <span style="color:var(--fg2)">${folderIds(f).length}</span></button>`;
+    el.innerHTML=`<div class="fbar"><div class="fhead"><b>Folders</b><span>${list.length?"":"Organize your saves, or plan with roommates"}</span></div>
+      ${mine.length?`<div class="fnote">Just me</div><div class="chips">${mine.map(chip).join("")}</div>`:""}
+      ${shared.length?`<div class="fnote">Shared</div><div class="chips">${shared.map(chip).join("")}</div>`:""}
+      <div class="chips" style="margin-top:6px"><button class="chip" id="fNew" data-kind="private">+ New folder (just me)</button><button class="chip" id="fNew2" data-kind="shared">+ New shared folder</button></div>
+      ${foldEdit==="new"?`<div class="fnote">${newKind==="private"?"🔒 Just for you. Nobody else can see it.":"📁 Shared. You'll get a link to send to roommates."}</div>`+editBox("","Create",newKind==="private"?"Like “Top picks”":"Like “Kyra + Sam”"):""}${msg}</div>
       <div class="fnote" style="padding:2px 14px 6px">Your hearts below are just yours.</div>`}
 }
 $("#listView").addEventListener("click",async e=>{const t=e.target.closest("button");if(!t||!t.closest("#fold")||tab!=="saved")return;folderMsg="";
   if(t.dataset.openFold){openFolder=t.dataset.openFold;foldEdit=null;foldLinkShown=null;foldLinkVal="";subFolder(openFolder)}
-  else if(t.id==="fNew"){foldEdit="new"}
-  else if(t.id==="fBack"){openFolder=null;foldEdit=null;foldLinkShown=null}
+  else if(t.id==="fNew"||t.id==="fNew2"){foldEdit="new";newKind=t.dataset.kind||"shared"}
+  else if(t.id==="fNewIn"){foldEdit="newin"}
+  else if(t.id==="fBack"){const x=folders[openFolder];openFolder=x&&x.parent&&folders[x.parent]?x.parent:null;foldEdit=null;foldLinkShown=null}
+  else if(t.id==="fDelete"){const x=folders[openFolder];if(!confirm(`Delete “${x.name}”${x.parent?"":" for everyone in it"}?`))return;const f=openFolder;try{await window.FAH_NOTES.remove(f)}catch(err){folderMsg="Only the person who made it can delete it.";renderList();return}
+    if(x.parent&&folders[x.parent])folders[x.parent].kids=(folders[x.parent].kids||[]).filter(k=>k.code!==f);myFolders.delete(f);delete folders[f];saveMyFolders();openFolder=x.parent||null}
   else if(t.id==="fRename"){foldEdit=openFolder}
   else if(t.id==="fCancel"){foldEdit=null}
   else if(t.id==="fSave"){const v=($("#fName").value||"").trim().slice(0,40);if(!v){folderMsg="Give the folder a name.";renderList();return}
-    if(foldEdit==="new"){openFolder=createFolder(v)}else if(folders[foldEdit]){folders[foldEdit].name=v;writeFolder(foldEdit)}foldEdit=null}
+    if(foldEdit==="new"){openFolder=createFolder(v,null,{private:newKind==="private"})}else if(foldEdit==="newin"){openFolder=createFolder(v,null,{parent:openFolder})}else if(folders[foldEdit]){folders[foldEdit].name=v;writeFolder(foldEdit);const P=folders[folders[foldEdit].parent];if(P)(P.kids||[]).forEach(k=>{if(k.code===foldEdit)k.name=v})}foldEdit=null}
   else if(t.id==="fCopy"){foldLinkShown=openFolder;const link=folderLink(openFolder);foldLinkVal=link;try{await navigator.clipboard.writeText(link)}catch(err){}}
   else if(t.id==="fMerge"&&linkExtra){const x=folders[linkExtra.f];x.ids=[...x.ids,...linkExtra.ids];writeFolder(linkExtra.f);linkExtra=null}
   else if(t.id==="fLeave"){myFolders.delete(openFolder);saveMyFolders();openFolder=null;foldLinkShown=null}
@@ -789,9 +835,10 @@ $("#listView").addEventListener("keydown",e=>{if(e.target.id==="fName"&&e.key===
 
 /* folder buttons on each place's card */
 const _renderCard=renderCard;renderCard=function(){_renderCard();const a=APTS.find(x=>x.id===selected);if(!a)return;
-  const secs=$("#card").querySelectorAll(".sec");const last=secs[secs.length-1];if(!last)return;const list=[...myFolders].filter(f=>folders[f]);
-  last.insertAdjacentHTML("afterend",`<div class="sec" id="cardFold"><h4>Shared folders</h4><div class="chips">${list.map(f=>{const on=folderIds(f).includes(a.id);return `<button class="chip" aria-pressed="${on}" data-fold-toggle="${f}">${on?"✓ ":""}📁 ${esc(folders[f].name)}</button>`}).join("")}<button class="chip" data-fold-new="1">+ New folder with this place</button></div></div>`)};
-$("#card").addEventListener("click",e=>{const t=e.target.closest("[data-fold-toggle],[data-fold-new]");if(!t)return;e.stopPropagation();
+  const secs=$("#card").querySelectorAll(".sec");const last=secs[secs.length-1];if(!last)return;const list=allFolderCodes();const inF=list.filter(f=>folderIds(f).includes(a.id));
+  last.insertAdjacentHTML("afterend",`<div class="sec" id="cardFold"><h4>Folders</h4><div class="chips">${list.map(f=>{const on=folderIds(f).includes(a.id);return `<button class="chip" aria-pressed="${on}" data-fold-toggle="${f}">${on?"✓ ":""}${folders[f].private?"🔒":"📁"} ${esc(folderTitle(f))}</button>`}).join("")}<button class="chip" data-fold-new="1">+ New folder with this place</button></div>
+    ${inF.length?`<div class="cnotes">${inF.map(f=>{const ns=notesFor(f,a.id);return `<button type="button" class="cnote" data-note-f="${f}">${NOTE_SVG}<span><b>${esc(folderTitle(f))}</b>${ns.length?ns.map(n=>`<i>${esc(n.name)}: ${esc(n.text)}</i>`).join(""):"<i>Add a note</i>"}</span></button>`}).join("")}</div>`:""}</div>`)};
+$("#card").addEventListener("click",e=>{const nb=e.target.closest("[data-note-f]");if(nb){e.stopPropagation();openNote(nb.dataset.noteF,selected);return}const t=e.target.closest("[data-fold-toggle],[data-fold-new]");if(!t)return;e.stopPropagation();
   if(t.dataset.foldToggle)toggleInFolder(t.dataset.foldToggle,selected);
   else{const f=createFolder("Our places",selected);openFolder=f;foldEdit=f;renderCard()}});
 
@@ -810,8 +857,14 @@ function renderPrefs(el){const p=PREFS||{};const editing=prefsEdit||(!PREFS&&!he
   const chips=(arr,key,sel)=>arr.map(([k,l])=>`<button class="chip" aria-pressed="${sel.includes(k)}" data-p${key}="${esc(k)}">${esc(l)}</button>`).join("");
   const one=(arr,key,v)=>arr.map(([k,l])=>`<button class="chip" aria-pressed="${String(v)===String(k)}" data-p${key}="${esc(k)}">${esc(l)}</button>`).join("");
   const MUST=[...AMEN.map(([k,l])=>[k,l]),["balc","Balcony"]];
-  el.innerHTML=`<div class="fbar pform"><div class="fhead"><b>Your preferences</b><span>Saved to your account</span></div>
-   <label class="ptog"><input type="checkbox" id="pStrict" ${p.strict?"checked":""}><span><b>Only show places that match</b><i>Off: your preferences are a guide, and other good places can still show up.</i></span></label>
+  el.innerHTML=`<div class="fbar pform"><div class="fhead"><b>Your preferences</b><span>Saved to your account</span></div>${prefFields(p)}
+   <div class="frow"><button class="fb pri" id="pSave">Save and show my picks</button>${PREFS?'<button class="fb" id="pCancel">Cancel</button><button class="fb" id="pClear">Clear</button>':""}</div>
+   ${trendHtml}</div>`;el.dataset.pbox="1";el._draft=draftOf(p)}
+function draftOf(p){return{max:p.max||null,walk:p.walk||null,drive:p.drive||null,must:[...(p.must||[])],hoods:[...(p.hoods||[])],kinds:[...(p.kinds||[])],room:p.room||"own",plans:[...(p.plans||[])],balc:[...(p.balc||[])],minRating:p.minRating||0,strict:!!p.strict}}
+function prefFields(p){const chips=(arr,key,sel)=>arr.map(([k,l])=>`<button type="button" class="chip" aria-pressed="${sel.includes(k)}" data-p${key}="${esc(k)}">${esc(l)}</button>`).join("");
+  const one=(arr,key,v)=>arr.map(([k,l])=>`<button type="button" class="chip" aria-pressed="${String(v)===String(k)}" data-p${key}="${esc(k)}">${esc(l)}</button>`).join("");
+  const MUST=[...AMEN.map(([k,l])=>[k,l]),["balc","Balcony"]];
+  return `<label class="ptog"><input type="checkbox" id="pStrict" ${p.strict?"checked":""}><span><b>Only show places that match</b><i>Off: your preferences are a guide, and other good places can still show up.</i></span></label>
    <div class="fnote">Type</div><div class="chips">${chips([["apartment","Apartments"],["dorm","Dorms"],["house","Houses"]],"k",p.kinds||[])}</div>
    <div class="fnote">Bedroom</div><div class="chips">${one([["own","My own bedroom"],["shared","Shared bedroom"],["any","Either"]],"r",p.room||"own")}</div>
    <div class="fnote">Max price: <b id="pMaxO">${p.max?money(p.max):"Any"}</b></div><input type="range" id="pMax" min="600" max="2100" step="50" value="${p.max||2100}">
@@ -821,19 +874,18 @@ function renderPrefs(el){const p=PREFS||{};const editing=prefsEdit||(!PREFS&&!he
    <div class="fnote">Must have</div><div class="chips">${chips(MUST,"m",p.must||[])}</div>
    <div class="fnote">Balcony</div><div class="chips">${chips(BALC_FILTERS,"b",p.balc||[])}</div>
    <div class="fnote">Rating</div><div class="chips">${one([[0,"Any"],[3.5,"3.5+ ★"],[4,"4.0+ ★"],[4.5,"4.5+ ★"]],"rt",p.minRating||0)}</div>
-   <div class="fnote">Neighborhoods</div><div class="chips">${chips(HOODS.map(h=>[h,h]),"h",p.hoods||[])}</div>
-   <div class="frow"><button class="fb pri" id="pSave">Save and show my picks</button>${PREFS?'<button class="fb" id="pCancel">Cancel</button><button class="fb" id="pClear">Clear</button>':""}</div>
-   ${trendHtml}</div>`;
-  el._draft={max:p.max||null,walk:p.walk||null,drive:p.drive||null,must:[...(p.must||[])],hoods:[...(p.hoods||[])],kinds:[...(p.kinds||[])],room:p.room||"own",plans:[...(p.plans||[])],balc:[...(p.balc||[])],minRating:p.minRating||0,strict:!!p.strict};}
+   <div class="fnote">Neighborhoods</div><div class="chips">${chips(HOODS.map(h=>[h,h]),"h",p.hoods||[])}</div>`}
 function prefSummary(){const p=PREFS;const L=(arr,ks)=>(ks||[]).map(k=>(arr.find(x=>String(x[0])===String(k))||[,k])[1]);return [...L([["apartment","Apartments"],["dorm","Dorms"],["house","Houses"]],p.kinds),p.room==="shared"?"shared bedroom":null,p.max?"up to "+money(p.max):null,p.walk?"≤"+p.walk+" min walk":null,p.drive?"≤"+p.drive+" min drive":null,...L(PLAN_CHIPS,p.plans),p.minRating?p.minRating+"+ ★":null,...L(BALC_FILTERS,p.balc).map(x=>x.toLowerCase()),...(p.must||[]).map(k=>((AMEN.find(x=>x[0]===k)||PREF_MUST.find(x=>x[0]===k)||[,k])[1]).toLowerCase()),(p.hoods||[]).length?p.hoods.join(", "):null].filter(Boolean).join(" · ")||"anything"}
 function writePrefs(){if(prefsRef)prefsRef.set(Object.assign({},PREFS||{cleared:true},{meta:PMETA,updatedAt:Date.now()})).catch(()=>{})}
 function savePrefs(p){PREFS=p;store("fahm.prefs",p);writePrefs();recCache=null;renderList();buildPins()}
-$("#listView").addEventListener("input",e=>{const el=$("#fold");if(!el||!el._draft)return;if(e.target.id==="pMax"){const v=+e.target.value;el._draft.max=v>=2100?null:v;$("#pMaxO").textContent=v>=2100?"Any":money(v)}
-  if(e.target.id==="pWalk"){const v=+e.target.value;el._draft.walk=v>=60?null:v;$("#pWalkO").textContent=v>=60?"Any":v+" min"}
-  if(e.target.id==="pDrive"){const v=+e.target.value;el._draft.drive=v>=30?null:v;$("#pDriveO").textContent=v>=30?"Any":v+" min"}
+document.addEventListener("input",e=>{const el=e.target.closest("[data-pbox]");if(!el||!el._draft)return;const o=id=>el.querySelector(id);if(e.target.id==="pMax"){const v=+e.target.value;el._draft.max=v>=2100?null:v;o("#pMaxO").textContent=v>=2100?"Any":money(v)}
+  if(e.target.id==="pWalk"){const v=+e.target.value;el._draft.walk=v>=60?null:v;o("#pWalkO").textContent=v>=60?"Any":v+" min"}
+  if(e.target.id==="pDrive"){const v=+e.target.value;el._draft.drive=v>=30?null:v;o("#pDriveO").textContent=v>=30?"Any":v+" min"}
   if(e.target.id==="pStrict")el._draft.strict=e.target.checked});
-$("#listView").addEventListener("click",e=>{const t=e.target.closest("button");if(!t||!t.closest("#fold")||tab!=="for")return;const el=$("#fold");
-  if(t.id==="pEdit"){prefsEdit=true;renderList();return}
+document.addEventListener("click",e=>{const t=e.target.closest("button");if(!t)return;
+  if(t.id==="pEdit"&&t.closest("#fold")){prefsEdit=true;renderList();return}
+  const el=t.closest("[data-pbox]");if(!el)return;
+  if(el.id==="prefScreen"){if(t.id==="psSkip"){PMETA.welcomed=true;writePrefs();closePrefScreen();return}if(t.id==="psSave"){PMETA.welcomed=true;savePrefs(el._draft);closePrefScreen(true);return}}
   if(t.id==="pCancel"){prefsEdit=false;renderList();return}
   if(t.id==="pClear"){prefsEdit=false;savePrefs(null);return}
   if(t.id==="pSave"&&el._draft){prefsEdit=false;PMETA.welcomed=true;savePrefs(el._draft);$("#scroll").scrollTop=0;return}
@@ -851,9 +903,13 @@ $("#listView").addEventListener("click",e=>{const t=e.target.closest("button");i
 window.FAH_CTX=()=>{const t=trends();const sv=APTS.filter(a=>hearts.has(a.id));const vw=Object.entries(PMETA.views||{}).sort((x,y)=>y[1]-x[1]).map(([id])=>APTS.find(a=>a.id===id)).filter(a=>a&&!hearts.has(a.id)).slice(0,5);
   return{prefs:PREFS,trends:t,saved:sv.map(a=>a.name),viewed:vw.map(a=>a.name),hoods:HOODS,amen:AMEN.map(([k,l])=>[k,l]),money}};
 function maybeWelcome(){if(PREFS||PMETA.welcomed||document.getElementById("welc"))return;const d=document.createElement("div");d.id="welc";
-  d.innerHTML=`<div class="wbox" role="dialog" aria-label="Welcome"><b>You're in</b><p>Save your preferences to get better picks in <b>For you</b>, like price, walk time, floor plan and must-haves.</p><p class="wsub">They don't have to limit what you see. You choose whether they're a guide or a filter.</p><div class="wbtns"><button type="button" class="fb pri" id="wGo">Set my preferences</button><button type="button" class="fb" id="wLater">Maybe later</button></div></div>`;
-  document.body.appendChild(d);const done=()=>{PMETA.welcomed=true;writePrefs();d.remove()};
-  d.querySelector("#wLater").onclick=done;d.addEventListener("click",e=>{if(e.target===d)done()});
-  d.querySelector("#wGo").onclick=()=>{done();prefsEdit=true;setTab("for");const P=$("#panel");if(P)P.classList.remove("min");$("#scroll").scrollTop=0}}
+  d.innerHTML=`<div class="wbox" role="dialog" aria-label="Welcome"><b>You're in</b><p>Your account is approved. Next, tell us what you're looking for so <b>For you</b> can pick places that fit.</p><div class="wbtns"><button type="button" class="pri" id="wGo">Continue</button></div></div>`;
+  document.body.appendChild(d);d.querySelector("#wGo").onclick=()=>{d.remove();openPrefScreen(true)}}
+function openPrefScreen(first){let d=$("#prefScreen");if(!d){d=document.createElement("div");d.id="prefScreen";document.body.appendChild(d)}
+  const p=PREFS||{};d.innerHTML=`<div class="pshead"><div><b>${first?"Set your preferences":"Preferences"}</b><span>${first?"You can change these any time in Settings.":"Used for your picks in For you."}</span></div>${first?'<button type="button" class="psskip" id="psSkip">Skip for now</button>':'<button type="button" class="psskip" id="psSkip" aria-label="Close">Cancel</button>'}</div>
+    <div class="psbody fbar pform">${prefFields(p)}</div><div class="psfoot"><button type="button" class="fb pri" id="psSave">${first?"Save and see my picks":"Save"}</button></div>`;
+  d.dataset.pbox="1";d._draft=draftOf(p);d.hidden=false;document.body.classList.add("noscroll")}
+function closePrefScreen(saved){const d=$("#prefScreen");if(d)d.hidden=true;document.body.classList.remove("noscroll");if(saved){setTab("for");const P=$("#panel");if(P)P.classList.remove("min")}}
+window.FAH_PREFS={open:()=>openPrefScreen(false)};
 
 
