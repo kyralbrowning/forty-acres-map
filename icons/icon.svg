@@ -6,6 +6,6 @@
 <path d="M420 -10c26 130-44 250 6 370s-4 120-10 162" stroke-width="11" opacity=".22"/>
 <path d="M196 -10L208 522M200 104c90-4 200 6 322-8M-10 414c180 -6 360 4 532 -10" stroke-width="17" opacity=".3"/>
 </g>
-<g transform="translate(256 258) scale(0.86) translate(-256 -238)"><path d="M256 80c-76 0-138 59-138 133 0 96 116 192 128 202 6 5 14 5 20 0 12-10 128-106 128-202 0-74-62-133-138-133z" fill="#fff"/></g>
-<path d="M256 176.5L192 228.5V279.5c0 5 4 9 9 9h39.0v-44h32v44h39.0c5 0 9-4 9-9V228.5z" fill="#bf5700" stroke="#bf5700" stroke-width="8" stroke-linejoin="round"/>
+<path transform="translate(0 22)" d="M256 80c-76 0-138 59-138 133 0 96 116 192 128 202 6 5 14 5 20 0 12-10 128-106 128-202 0-74-62-133-138-133z" fill="#fff"/>
+<path d="M256 149L168 221V293c0 6 4 10 10 10h58.0v-58h40v58h58.0c6 0 10-4 10-10V221z" fill="#bf5700" stroke="#bf5700" stroke-width="10" stroke-linejoin="round"/>
 </svg>
