@@ -530,7 +530,7 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
 #ai .tabs{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:10px 14px 0;background:var(--chip,#f1ede9);border-radius:9px;padding:2px}#ai .tabs button{border:0;background:transparent;color:inherit;font:inherit;font-weight:600;font-size:13px;padding:7px;border-radius:7px;cursor:pointer}#ai .tabs button[aria-pressed=true]{background:var(--glass-solid,#fff);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 #ai .msgs{flex:1;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px;overscroll-behavior:contain}
 #ai .m{max-width:88%;padding:9px 12px;border-radius:14px;font-size:14px;line-height:1.45;white-space:normal;word-wrap:break-word}#ai .m.me{align-self:flex-end;background:#bf5700;color:#fff;border-bottom-right-radius:4px}#ai .m.bot{align-self:flex-start;background:var(--chip,#f1ede9);border-bottom-left-radius:4px}#ai .m.err{background:#fde8e6;color:#9b2c20}
-#ai .m ul{margin:4px 0;padding-left:18px}#ai .m p{margin:0 0 6px}#ai .m p:last-child{margin:0}
+#ai .m ul,#ai .m ol{margin:4px 0 8px;padding-left:18px}#ai .m li{margin:3px 0}#ai .m .mh{margin:8px 0 2px}#ai .m .mh:first-child{margin-top:0}#ai .m p{margin:0 0 6px}#ai .m p:last-child{margin:0}
 #ai .sugg{display:flex;flex-wrap:wrap;gap:6px}#ai .sugg button{border:1px solid var(--hair,#ddd);background:transparent;color:inherit;font:inherit;font-size:12.5px;border-radius:999px;padding:6px 10px;cursor:pointer}
 #ai form{display:flex;gap:8px;padding:10px 14px calc(12px + env(safe-area-inset-bottom,0px));border-top:.5px solid var(--hair,#eee);flex-wrap:wrap}
 #ai form input{flex:1;min-width:0;font:inherit;font-size:16px;padding:10px 12px;border-radius:11px;border:1px solid var(--hair,#ddd2c7);background:transparent;color:inherit;outline:none}#ai form input:focus{border-color:#bf5700}
@@ -593,7 +593,7 @@ async function fill(){const p=$g("appr");p.innerHTML='<div class="abox"><div cla
 </script>
 
 <div id="ai" hidden><div class="box" role="dialog" aria-label="Ask AI">
-  <div class="hd"><b id="aiTitle">✨ Ask AI</b><div class="hbtns"><button type="button" id="aiHist" aria-label="Past chats" title="Past chats"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg></button><button type="button" id="aiNew" aria-label="New chat" title="New chat"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button><button type="button" id="aiX" aria-label="Close">✕</button></div></div>
+  <div class="hd"><b id="aiTitle">Ask AI</b><div class="hbtns"><button type="button" id="aiHist" aria-label="Past chats" title="Past chats"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg></button><button type="button" id="aiNew" aria-label="New chat" title="New chat"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button><button type="button" id="aiX" aria-label="Close">✕</button></div></div>
   <div id="aiChat" class="pane">
     <div class="tabs"><button type="button" id="aiTAsk" aria-pressed="true">Ask about places</button><button type="button" id="aiTAdd" aria-pressed="false">Add a missing place</button></div>
     <div class="msgs" id="aiMsgs"></div>
@@ -612,8 +612,19 @@ async function fill(){const p=$g("appr");p.innerHTML='<div class="abox"><div cla
 <script>
 (function(){const A=window.FAH_AUTH,$a=id=>document.getElementById(id);let mode="ask",busy=false,uid=null,cur=null;
 const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
-function md(t){const lines=esc(t).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").split(/\n/);let h="",ul=false;
-  for(const l of lines){const m=/^\s*[-*•]\s+(.*)/.exec(l);if(m){if(!ul){h+="<ul>";ul=true}h+="<li>"+m[1]+"</li>"}else{if(ul){h+="</ul>";ul=false}if(l.trim())h+="<p>"+l+"</p>"}}return h+(ul?"</ul>":"")}
+function md(t){
+  // Clean up whatever markdown the AI sends: headings become bold lines, no stray #, *, |, or ---.
+  const inl=x=>x.replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/__(.+?)__/g,"<b>$1</b>").replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g,"$1$2").replace(/`([^`]+)`/g,"$1").replace(/\*\*/g,"");
+  const lines=esc(t).split(/\n/);let h="",list=null;const close=()=>{if(list){h+="</"+list+">";list=null}};
+  for(let l of lines){l=l.replace(/\s+$/,"");
+    if(/^\s*([-*_]\s*){3,}$/.test(l)||/^\s*\|?\s*:?-{2,}/.test(l)){continue}
+    if(/^\s*\|.*\|\s*$/.test(l)){l="- "+l.replace(/^\s*\||\|\s*$/g,"").split("|").map(c=>c.trim()).filter(Boolean).join(" · ")}
+    let m;
+    if(m=/^\s*#{1,6}\s+(.*)/.exec(l)){close();h+='<p class="mh"><b>'+inl(m[1].replace(/\*\*/g,""))+"</b></p>";continue}
+    if(m=/^\s*[-*•]\s+(.*)/.exec(l)){if(list!=="ul"){close();h+="<ul>";list="ul"}h+="<li>"+inl(m[1])+"</li>";continue}
+    if(m=/^\s*\d+[.)]\s+(.*)/.exec(l)){if(list!=="ol"){close();h+="<ol>";list="ol"}h+="<li>"+inl(m[1])+"</li>";continue}
+    close();l=l.replace(/^\s*#+\s*/,"");if(l.trim())h+="<p>"+inl(l)+"</p>"}
+  close();return h}
 /* past chats live in this browser, per account */
 const KEY=()=>"fah.aichats."+uid;
 function loadAll(){try{return JSON.parse(localStorage.getItem(KEY()))||[]}catch(e){return []}}
@@ -624,14 +635,14 @@ function bubble(m){const d=document.createElement("div");d.className="m "+(m.rol
   if(m.role==="me")d.textContent=m.text;else if(m.err)d.textContent=m.text;else d.innerHTML=md(m.text);
   if(m.placeId){const b=document.createElement("button");b.type="button";b.className="mapbtn";b.textContent="Show it on the map";b.onclick=()=>showPlace(m.placeId);d.appendChild(b)}
   $a("aiMsgs").appendChild(d);return d}
-function intro(){const d=bubble({role:"bot",text:mode==="ask"?"Hi! Ask me to compare places or answer questions about them. I know your saved places too.":"Type the name of a place that isn't on the map. I'll check that it's real, look up its info, and add it if it's within the map's area (about a 20-minute drive from campus)."});d.classList.add("intro");
+function intro(){const d=bubble({role:"bot",text:mode==="ask"?"Ask me to compare places or find options, like price, walk time, pool or your own bathroom. I can see your saved places too.":"Type the name of a place that isn't on the map. I'll check it's real, look up its info, and add it if it's within about a 20-minute drive of campus."});d.classList.add("intro");
   if(mode==="ask"&&!cur.msgs.length){const s=document.createElement("div");s.className="sugg";["Compare my saved places","Which have a pool and my own bathroom under $1,200?","Closest places with a balcony","What's the cheapest 4x4 in West Campus?"].forEach(t=>{const b=document.createElement("button");b.type="button";b.textContent=t;b.onclick=()=>{$a("aiQ").value=t;$a("aiForm").requestSubmit()};s.appendChild(b)});$a("aiMsgs").appendChild(s)}}
 function render(){$a("aiMsgs").innerHTML="";intro();cur.msgs.forEach(bubble);$a("aiMsgs").scrollTop=1e9}
 function setMode(m){mode=m;$a("aiTAsk").setAttribute("aria-pressed",m==="ask");$a("aiTAdd").setAttribute("aria-pressed",m==="add");$a("aiWeb").hidden=m!=="add";
   $a("aiQ").placeholder=m==="ask"?"Ask anything about the places":"Name of the place, e.g. \"The Castilian\"";$a("aiGo").textContent=m==="ask"?"Send":"Find & add";
   $a("aiHint").textContent=m==="ask"?"Answers come from the map's info. Double-check prices on the official site.":"Places added with AI are marked so people know to double-check them.";
   const it=$a("aiMsgs").querySelector(".intro");if(it){it.remove();const sg=$a("aiMsgs").querySelector(".sugg");if(sg)sg.remove();const first=$a("aiMsgs").firstChild;const keep=[...$a("aiMsgs").children];$a("aiMsgs").innerHTML="";intro();keep.forEach(k=>$a("aiMsgs").appendChild(k))}}
-function showPane(p){$a("aiChat").hidden=p!=="chat";$a("aiPast").hidden=p!=="past";$a("aiTitle").textContent=p==="past"?"Past chats":"✨ Ask AI";$a("aiHist").setAttribute("aria-pressed",p==="past")}
+function showPane(p){$a("aiChat").hidden=p!=="chat";$a("aiPast").hidden=p!=="past";$a("aiTitle").textContent=p==="past"?"Past chats":"Ask AI";$a("aiHist").setAttribute("aria-pressed",p==="past")}
 function rel(t){const d=new Date(t),n=new Date();return d.toDateString()===n.toDateString()?d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):d.toLocaleDateString([],{month:"short",day:"numeric"})}
 function renderPast(){persist();const all=loadAll(),L=$a("aiPList");
   L.innerHTML=all.length?all.map(c=>`<div class="pitem${cur&&c.id===cur.id?" on":""}" data-id="${esc(c.id)}"><button type="button" class="popen" data-id="${esc(c.id)}"><b>${esc(c.title||"Chat")}</b><span>${rel(c.updated)} · ${c.msgs.filter(m=>m.role==="me").length} question${c.msgs.filter(m=>m.role==="me").length===1?"":"s"}${cur&&c.id===cur.id?" · open now":""}</span></button><button type="button" class="pdel" data-del="${esc(c.id)}" aria-label="Delete chat">✕</button></div>`).join(""):'<div class="pnone">No past chats yet.</div>';
