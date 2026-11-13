@@ -406,7 +406,7 @@ window.claude={use:async n=>{if(n==="db"){if(!dbP)dbP=makeDb();return dbP}if(n==
 window.FAH_AUTH={sb,ready,
   saveHash(){try{if(location.hash&&/^#folder-/.test(location.hash))localStorage.setItem("fah.returnHash",location.hash)}catch(e){}},
   async signIn(email,password){const r=await sb.auth.signInWithPassword({email,password});return r.error?r.error.message:null},
-  async signUp(email,password,note){this.saveHash();const r=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname,data:{note:String(note||"").trim().slice(0,50)}}});if(r.error)return{err:r.error.message};return{needsConfirm:!r.data.session}},
+  async signUp(email,password,note,first,last){this.saveHash();const r=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname,data:{note:String(note||"").trim().slice(0,50),first_name:String(first||"").trim().slice(0,40),last_name:String(last||"").trim().slice(0,40)}}});if(r.error)return{err:r.error.message};return{needsConfirm:!r.data.session}},
   isAdmin:false,
   status:ready.then(async s=>{if(!s)return null;try{const r=await sb.rpc("my_status");return r.error?"pending":r.data}catch(e){return "pending"}}),
   async checkAdmin(){try{const r=await sb.rpc("is_admin");this.isAdmin=!r.error&&r.data===true}catch(e){this.isAdmin=false}return this.isAdmin},
@@ -466,7 +466,8 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
     <form id="gForm" autocomplete="on">
       <input id="gEmail" type="email" placeholder="Email" autocomplete="email" required>
       <div class="gpw" id="gPw"><input id="gPass" type="password" placeholder="Password (8+ characters)" autocomplete="current-password" minlength="8"><button type="button" id="gEye" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><line class="eslash" x1="3" y1="3" x2="21" y2="21"/></svg></button></div>
-      <input id="gNote" type="text" maxlength="50" placeholder="Message for the owner (optional)" autocomplete="off" hidden>
+      <div class="gname" id="gName" hidden><input id="gFirst" type="text" maxlength="40" placeholder="First name" autocomplete="given-name"><input id="gLast" type="text" maxlength="40" placeholder="Last name" autocomplete="family-name"></div>
+      <input id="gNote" type="text" maxlength="50" placeholder="Message to the site owner (optional)" autocomplete="off" hidden>
       <div class="gcount" id="gCount" hidden>0/50</div>
       <button type="submit" id="gGo">Sign in</button>
     </form>
@@ -494,7 +495,7 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
 .abox{background:#fff;color:#2b2522;border-radius:18px;width:100%;max-width:440px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)}
 .ahead{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #eee3d8;font-size:16px}.ahead button{border:0;background:none;font-size:18px;cursor:pointer;color:inherit}
 .alist{overflow:auto;padding:6px 16px 14px}.arow{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f1e8df}
-.aem{font-weight:600;font-size:14px;word-break:break-all}.anote{font-size:13.5px;margin-top:2px}.anote.none{color:#9a8f86}.ameta{font-size:12px;color:#7a6f66;margin-top:2px}.anone{padding:18px 0;color:#7a6f66;font-size:14px}
+.anm{font-weight:700;font-size:15px}.aem{font-weight:500;font-size:13px;color:#7a6f66;word-break:break-all}.gname{display:flex;gap:8px}.gname input{flex:1;min-width:0}.gname[hidden]{display:none}.anote{font-size:13.5px;margin-top:2px}.anote.none{color:#9a8f86}.ameta{font-size:12px;color:#7a6f66;margin-top:2px}.anone{padding:18px 0;color:#7a6f66;font-size:14px}
 .abtns{display:flex;flex-direction:column;gap:6px}.abtns button{font:inherit;font-size:13px;font-weight:600;padding:7px 12px;border-radius:9px;border:1px solid #ddd2c7;background:#fff;color:#2b2522;cursor:pointer;white-space:nowrap}.abtns button.ok{background:#bf5700;border-color:#bf5700;color:#fff}
 @media (prefers-color-scheme:dark){.abox,.abtns button{background:#26221f;color:#f3ede6}.abtns button{border-color:#4a423b}.ahead,.arow{border-color:#3a332d}}
 .gcount{font-size:11.5px;color:#9a8f86;text-align:right;margin-top:-6px}.gcount[hidden]{display:none}
@@ -507,9 +508,9 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
 <script>
 (function(){
 const A=window.FAH_AUTH,g=document.getElementById("gate"),$g=id=>document.getElementById(id);let mode="in";
-function show(m){mode=m;g.hidden=false;const map={in:["Sign in to see the map, your saves and shared folders.","Sign in","New here? Create an account"],up:["Make an account. The site owner approves new accounts before they can see the map.","Continue","Have an account? Sign in"],reset:["Enter your email and we'll send a reset link.","Send reset link","Back to sign in"],newpw:["Choose a new password.","Save password",""]}[m];
+function show(m){mode=m;g.hidden=false;const map={in:["Sign in to see the map, your saves and shared folders.","Sign in","New here? Create an account"],up:["Make an account with your email and a password.","Continue","Have an account? Sign in"],up2:["Your account has to be approved by the site owner before you can see the map. Tell them who you are:","Create account","Back"],reset:["Enter your email and we'll send a reset link.","Send reset link","Back to sign in"],newpw:["Choose a new password.","Save password",""]}[m];
   $g("gSub").textContent=map[0];$g("gGo").textContent=map[1];$g("gSwap").textContent=map[2];$g("gSwap").hidden=!map[2];$g("gForgot").hidden=m!=="in";
-  $g("gPw").hidden=m==="reset";$g("gNote").hidden=m!=="up";$g("gCount").hidden=m!=="up";$g("gForm").hidden=false;$g("gWait").hidden=true;$g("glinks").hidden=false;$g("gEmail").hidden=m==="newpw";$g("gPass").autocomplete=m==="in"?"current-password":"new-password";$g("gMsg").textContent="";$g("gMsg").className="gmsg";
+  $g("gPw").hidden=m==="reset"||m==="up2";$g("gEmail").hidden=m==="newpw"||m==="up2";$g("gName").hidden=m!=="up2";$g("gNote").hidden=m!=="up2";$g("gCount").hidden=m!=="up2";$g("gForm").hidden=false;$g("gWait").hidden=true;$g("glinks").hidden=false;$g("gPass").autocomplete=m==="in"?"current-password":"new-password";$g("gMsg").textContent="";$g("gMsg").className="gmsg";
   if(/^#folder-/.test(location.hash)&&m==="in")$g("gSub").textContent="Someone shared a folder with you. Sign in or make an account to open it."}
 function wait(denied){g.hidden=false;$g("gForm").hidden=true;$g("glinks").hidden=true;$g("gWait").hidden=false;$g("gMsg").textContent="";
   $g("gSub").textContent=denied?"This account wasn't approved, so it can't open the map.":"You're signed in, but your account is still waiting for the site owner to approve it. Check back soon.";$g("gAgain").hidden=!!denied}
@@ -519,10 +520,11 @@ $g("gNote").oninput=()=>{$g("gCount").textContent=$g("gNote").value.length+"/50"
 function needConfirm(em){msg("You still need to confirm your email. Tap the link we sent to "+em+", then sign in. ",true);
   const b=document.createElement("button");b.type="button";b.className="glink";b.textContent="Resend email";b.onclick=async()=>{b.disabled=true;const e=await A.resend(em);b.textContent=e?"Couldn't resend. Try again in a minute.":"Sent. Check your inbox and spam."};$g("gMsg").appendChild(b)}
 function msg(t,ok){$g("gMsg").textContent=t;$g("gMsg").className="gmsg "+(ok?"ok":"err")}
-$g("gSwap").onclick=()=>show(mode==="in"?"up":"in");$g("gForgot").onclick=()=>show("reset");
+$g("gSwap").onclick=()=>show(mode==="in"?"up":mode==="up2"?"up":"in");$g("gForgot").onclick=()=>show("reset");
 $g("gForm").onsubmit=async e=>{e.preventDefault();const em=$g("gEmail").value.trim(),pw=$g("gPass").value;$g("gGo").disabled=true;
   try{if(mode==="in"){if(!pw){msg("Enter your password.");return}const err=await A.signIn(em,pw);if(err){if(/not confirmed/i.test(err)){needConfirm(em);return}msg(err==="Invalid login credentials"?"That email and password don't match.":err);return}A.saveHash();location.reload()}
-   else if(mode==="up"){if(pw.length<8){msg("Use at least 8 characters.");return}const r=await A.signUp(em,pw,$g("gNote").value);if(r.err){msg(r.err);return}if(r.needsConfirm){wait(false);$g("gSub").textContent="Almost done! Two steps left:";msg("1) Confirm your email: tap the link we sent to "+em+". 2) Wait for the site owner to approve your account. Then sign in.",true);$g("gAgain").hidden=true;$g("gOut").textContent="Back to sign in";$g("gOut").onclick=()=>{$g("gOut").textContent="Sign out";$g("gOut").onclick=()=>A.signOut();show("in")}}else location.reload()}
+   else if(mode==="up"){if(!em||!$g("gEmail").checkValidity()){msg("Enter a valid email.");return}if(pw.length<8){msg("Use at least 8 characters.");return}show("up2");$g("gFirst").focus()}
+   else if(mode==="up2"){const fn=$g("gFirst").value.trim(),ln=$g("gLast").value.trim();if(!fn||!ln){msg("Enter your first and last name.");return}const r=await A.signUp(em,pw,$g("gNote").value,fn,ln);if(r.err){msg(r.err);return}if(r.needsConfirm){wait(false);$g("gSub").textContent="Almost done! Two steps left:";msg("1) Confirm your email: tap the link we sent to "+em+". 2) Wait for the site owner to approve your account. Then sign in.",true);$g("gAgain").hidden=true;$g("gOut").textContent="Back to sign in";$g("gOut").onclick=()=>{$g("gOut").textContent="Sign out";$g("gOut").onclick=()=>A.signOut();show("in")}}else location.reload()}
    else if(mode==="reset"){const err=await A.reset(em);if(err){msg(err);return}msg("If that email has an account, a reset link is on its way.",true)}
    else if(mode==="newpw"){if(pw.length<8){msg("Use at least 8 characters.");return}const err=await A.setPassword(pw);if(err){msg(err);return}location.replace(location.pathname)}}
   finally{$g("gGo").disabled=false}};
@@ -544,7 +546,7 @@ async function openAppr(){let p=$g("appr");if(!p){p=document.createElement("div"
 async function fill(){const p=$g("appr");p.innerHTML='<div class="abox"><div class="ahead"><b>Approve people</b><button id="apprX" aria-label="Close">✕</button></div><div class="alist">Loading…</div></div>';
   let ms;try{ms=await A.listMembers()}catch(x){p.querySelector(".alist").textContent="Couldn't load accounts.";return}
   const lbl={pending:"Waiting",approved:"Approved",denied:"Denied"},n=ms.filter(m=>m.status==="pending").length,ab=$g("acctAppr");if(ab)ab.textContent="Approve people"+(n?" ("+n+")":"");
-  p.querySelector(".alist").innerHTML=ms.filter(m=>!m.is_admin).map(m=>`<div class="arow"><div class="ainfo"><div class="aem">${esc(m.email)}</div>${m.note?`<div class="anote">“${esc(m.note)}”</div>`:'<div class="anote none">No message</div>'}<div class="ameta">${lbl[m.status]||m.status} · ${new Date(m.created_at).toLocaleDateString()}</div></div><div class="abtns">${m.status!=="approved"?`<button class="ok" data-id="${m.user_id}" data-st="approved">Approve</button>`:""}${m.status==="pending"?`<button data-id="${m.user_id}" data-st="denied">Deny</button>`:""}${m.status==="approved"?`<button data-id="${m.user_id}" data-st="denied">Remove access</button>`:""}</div></div>`).join("")||'<div class="anone">No one has signed up yet.</div>'}
+  p.querySelector(".alist").innerHTML=ms.filter(m=>!m.is_admin).map(m=>`<div class="arow"><div class="ainfo">${(m.first_name||m.last_name)?`<div class="anm">${esc(((m.first_name||"")+" "+(m.last_name||"")).trim())}</div>`:""}<div class="aem">${esc(m.email)}</div>${m.note?`<div class="anote">“${esc(m.note)}”</div>`:'<div class="anote none">No message</div>'}<div class="ameta">${lbl[m.status]||m.status} · ${new Date(m.created_at).toLocaleDateString()}</div></div><div class="abtns">${m.status!=="approved"?`<button class="ok" data-id="${m.user_id}" data-st="approved">Approve</button>`:""}${m.status==="pending"?`<button data-id="${m.user_id}" data-st="denied">Deny</button>`:""}${m.status==="approved"?`<button data-id="${m.user_id}" data-st="denied">Remove access</button>`:""}</div></div>`).join("")||'<div class="anone">No one has signed up yet.</div>'}
 })();
 </script>
 
