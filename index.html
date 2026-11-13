@@ -448,7 +448,7 @@ window.FAH_BUSY=busyMsg;
 window.FAH_AUTH={sb,ready,
   saveHash(){try{if(location.hash&&/^#folder-/.test(location.hash))localStorage.setItem("fah.returnHash",location.hash)}catch(e){}},
   async signIn(email,password){const r=await sb.auth.signInWithPassword({email,password});return r.error?r.error.message:null},
-  async signUp(email,password,note,first,last){this.saveHash();const r=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname,data:{note:String(note||"").trim().slice(0,50),first_name:String(first||"").trim().slice(0,40),last_name:String(last||"").trim().slice(0,40)}}});if(r.error)return{err:busyMsg(r.error)||r.error.message};return{needsConfirm:!r.data.session}},
+  async signUp(email,password,note,first,last){this.saveHash();const r=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname,data:{folder:((/^#folder-([a-z0-9]{8,40})/.exec(location.hash)||[])[1]||(()=>{try{return((/^#folder-([a-z0-9]{8,40})/.exec(localStorage.getItem("fah.returnHash")||"")||[])[1])||""}catch(e){return""}})()),note:String(note||"").trim().slice(0,50),first_name:String(first||"").trim().slice(0,40),last_name:String(last||"").trim().slice(0,40)}}});if(r.error)return{err:busyMsg(r.error)||r.error.message};return{needsConfirm:!r.data.session}},
   isAdmin:false,
   status:ready.then(async s=>{if(!s)return null;try{const r=await sb.rpc("my_status");return r.error?"pending":r.data}catch(e){return "pending"}}),
   async checkAdmin(){try{const r=await sb.rpc("is_admin");this.isAdmin=!r.error&&r.data===true}catch(e){this.isAdmin=false}return this.isAdmin},
@@ -470,6 +470,10 @@ window.FAH_AUTH.status.then(async st=>{if(st!=="approved")return;
   try{for(let from=0;;from+=1000){const {data,error}=await sb.from("places").select("data").order("ord",{ascending:true,nullsFirst:false}).order("id").range(from,from+999);
       if(error)throw error;all.push(...data.map(r=>r.data));if(data.length<1000)break}}
   catch(e){const d=document.createElement("div");d.style.cssText="position:fixed;left:50%;top:20px;transform:translateX(-50%);background:#c0392b;color:#fff;padding:10px 14px;border-radius:10px;z-index:6000;font:14px system-ui";d.textContent="Couldn't load places. Refresh to try again.";document.body.appendChild(d);return}
+  try{if(!location.hash){const rh=localStorage.getItem("fah.returnHash");const ss=await window.FAH_AUTH.ready;const mf=ss&&ss.user&&ss.user.user_metadata&&ss.user.user_metadata.folder;
+    if(rh){localStorage.removeItem("fah.returnHash");history.replaceState(null,"",location.pathname+location.search+rh)}
+    else if(mf&&/^[a-z0-9]{8,40}$/.test(mf)&&!localStorage.getItem("fah.opened."+mf)){history.replaceState(null,"",location.pathname+location.search+"#folder-"+mf)}
+    const m=/^#folder-([a-z0-9]{8,40})/.exec(location.hash);if(m)localStorage.setItem("fah.opened."+m[1],"1")}}catch(e){}
   window.__APTS=all;const sc=document.createElement("script");sc.src="app.js?v="+Date.now().toString(36).slice(0,6);document.body.appendChild(sc)});
 </script>
 
@@ -646,7 +650,7 @@ function show(m){mode=m;g.hidden=false;const map={in:["Sign in to see the map, y
   $g("gPw").hidden=m==="reset"||m==="up2";$g("gEmail").hidden=m==="newpw"||m==="up2";$g("gName").hidden=m!=="up2";$g("gNote").hidden=m!=="up2";$g("gCount").hidden=m!=="up2";$g("gForm").hidden=false;$g("gWait").hidden=true;$g("glinks").hidden=false;$g("gPass").autocomplete=m==="in"?"current-password":"new-password";$g("gMsg").textContent="";$g("gMsg").className="gmsg";
   if(/^#folder-/.test(location.hash)&&m==="in")$g("gSub").textContent="Someone shared a folder with you. Sign in or make an account to open it."}
 function wait(denied){g.hidden=false;$g("gForm").hidden=true;$g("glinks").hidden=true;$g("gWait").hidden=false;$g("gMsg").textContent="";
-  $g("gSub").textContent=denied?"This account wasn't approved, so it can't open the map.":"You're signed in, but your account is still waiting for the site owner to approve it. Check back soon.";$g("gAgain").hidden=!!denied}
+  $g("gSub").textContent=denied?"This account wasn't approved, so it can't open the map.":"You're signed in, but your account is still waiting for the site owner to approve it. Check back soon."+((/^#folder-/.test(location.hash)||(()=>{try{return localStorage.getItem("fah.returnHash")}catch(e){return null}})())?" The shared folder will open for you once you're approved.":"");$g("gAgain").hidden=!!denied}
 $g("gAgain").onclick=()=>location.reload();$g("gOut").onclick=()=>A.signOut();
 $g("gEye").onclick=()=>{const i=$g("gPass"),show=i.type==="password";i.type=show?"text":"password";const b=$g("gEye");b.classList.toggle("on",show);b.setAttribute("aria-pressed",show);b.setAttribute("aria-label",show?"Hide password":"Show password")};
 $g("gNote").oninput=()=>{$g("gCount").textContent=$g("gNote").value.length+"/50"};
